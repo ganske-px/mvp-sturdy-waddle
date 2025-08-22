@@ -3,6 +3,7 @@ import requests
 import re
 import json
 import os
+import hashlib
 from datetime import datetime
 
 class PredictusAPI:
@@ -50,6 +51,137 @@ class PredictusAPI:
     
     def buscar_por_numero_cnj(self, numero_processo):
         return self._request("/predictus-api/processos/judiciais/buscarPorNumeroCNJ", {"numeroProcessoUnico": numero_processo})
+
+# === SISTEMA DE AUTENTICAÇÃO ===
+
+def hash_password(password):
+    """Cria hash SHA256 da senha"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verificar_credenciais(username, password):
+    """Verifica se as credenciais são válidas"""
+    # Buscar credenciais nos secrets do Streamlit
+    usuarios_validos = st.secrets.get("USUARIOS_APP", {})
+    
+    # Se não tiver usuários nos secrets, usar padrão
+    if not usuarios_validos:
+        usuarios_validos = {
+            "admin": "admin123",
+            "user": "user123"
+        }
+    
+    # Verificar se usuário existe e senha está correta
+    if username in usuarios_validos:
+        senha_esperada = usuarios_validos[username]
+        return password == senha_esperada
+    
+    return False
+
+def tela_login():
+    """Exibe a tela de login"""
+    st.set_page_config(page_title="Login - Consulta Processos", page_icon="🔐", layout="centered")
+    
+    # Estilo CSS para a tela de login
+    st.markdown("""
+    <style>
+    .login-container {
+        max-width: 400px;
+        margin: 0 auto;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        background-color: #f8f9fa;
+    }
+    .login-title {
+        text-align: center;
+        color: #1f77b4;
+        margin-bottom: 2rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Container centralizado
+    with st.container():
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col2:
+            st.markdown('<div class="login-container">', unsafe_allow_html=True)
+            
+            st.markdown('<h1 class="login-title">🔐 Login</h1>', unsafe_allow_html=True)
+            st.markdown('<h3 style="text-align: center; color: #666;">Consulta de Processos Judiciais</h3>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            # Campos de login
+            username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
+            password = st.text_input("🔒 Senha:", type="password", placeholder="Digite sua senha")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Botão de login
+            if st.button("🚀 Entrar", type="primary", use_container_width=True):
+                if not username or not password:
+                    st.error("❌ Preencha todos os campos!")
+                elif verificar_credenciais(username, password):
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.session_state.login_time = datetime.now()
+                    st.success("✅ Login realizado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("❌ Usuário ou senha inválidos!")
+            
+            st.markdown("---")
+            
+            # Informações de acesso
+            with st.expander("ℹ️ Informações de Acesso"):
+                st.info("""
+                **Usuários padrão:**
+                - admin / admin123
+                - user / user123
+                
+                **Para personalizar:**
+                Configure no arquivo .streamlit/secrets.toml:
+                ```toml
+                [USUARIOS_APP]
+                "seu_usuario" = "sua_senha"
+                "outro_user" = "outra_senha"
+                ```
+                """)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+
+def verificar_autenticacao():
+    """Verifica se o usuário está autenticado"""
+    return st.session_state.get('authenticated', False)
+
+def logout():
+    """Realiza logout do usuário"""
+    # Limpar todos os dados da sessão relacionados à autenticação
+    keys_to_remove = ['authenticated', 'username', 'login_time']
+    for key in keys_to_remove:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    st.success("✅ Logout realizado com sucesso!")
+    st.rerun()
+
+def exibir_info_usuario():
+    """Exibe informações do usuário logado na sidebar"""
+    if verificar_autenticacao():
+        with st.sidebar:
+            st.markdown("---")
+            st.markdown("### 👤 Usuário Logado")
+            st.write(f"**Usuário:** {st.session_state.username}")
+            
+            login_time = st.session_state.get('login_time')
+            if login_time:
+                st.write(f"**Login:** {login_time.strftime('%d/%m/%Y %H:%M')}")
+            
+            if st.button("🚪 Logout", use_container_width=True):
+                logout()
+
+# === FUNÇÕES ORIGINAIS (sem alteração) ===
 
 def limpar_texto(texto):
     if not texto: return texto
@@ -238,7 +370,8 @@ def exibir_processo(processo, indice):
                     else:
                         st.warning("Não foi possível obter detalhes do processo.")
 
-def main():
+def app_principal():
+    """Aplicação principal (após login)"""
     st.set_page_config(page_title="Consulta Processos", page_icon="⚖️", layout="wide")
     
     st.title("Consulta de Processos Judiciais")
@@ -258,7 +391,6 @@ def main():
         entrada = st.text_input("Nome completo ou CPF:", placeholder="Ex: João Silva ou 123.456.789-10")
     
     with col2:
-    
         if st.button("🔍 Nova Busca", type="primary", use_container_width=True):
             if not entrada.strip():
                 st.warning("Digite um nome ou CPF para pesquisar.")
@@ -407,6 +539,18 @@ def main():
         else:
             st.info("Nenhuma pesquisa salva ainda.")
             st.caption("💾 Pesquisas e detalhes são salvos automaticamente em 'historico_pesquisas.json'")
+        
+        # Exibir informações do usuário
+        exibir_info_usuario()
+
+def main():
+    """Função principal que controla fluxo de autenticação"""
+    # Verificar se usuário está autenticado
+    if not verificar_autenticacao():
+        tela_login()
+    else:
+        app_principal()
 
 if __name__ == "__main__":
     main()
+    
