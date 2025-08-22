@@ -1,2 +1,20 @@
+# Consulta de Processos Judiciais - Requirements
+# Versões atualizadas em agosto de 2025
+
+# === CORE DEPENDENCIES ===
 streamlit==1.48.1
 requests==2.32.5
+
+# === OPTIONAL DEPENDENCIES (recomendadas) ===
+
+# Parsing e validação de dados
+python-dateutil==2.9.0.post0
+validators==0.34.0
+
+# Melhor performance para HTTP requests
+urllib3==2.2.3
+certifi==2024.8.30
+
+# Formatação e manipulação de dados
+pandas==2.2.3
+numpy==1.26.4
