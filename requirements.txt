@@ -4,6 +4,7 @@
 # === CORE DEPENDENCIES ===
 streamlit==1.48.1
 requests==2.32.5
+posthog==6.6.1
 
 # === OPTIONAL DEPENDENCIES (recomendadas) ===
 
