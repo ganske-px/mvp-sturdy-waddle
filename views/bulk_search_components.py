@@ -1,110 +1,82 @@
 """
-Bulk Search View Components
-UI components for bulk search results display
+Componentes de Visualização de Pesquisa em Lote
+Componentes de UI para exibição de resultados de pesquisa em lote
 """
 import streamlit as st
 from datetime import datetime
 from typing import Dict
 from controllers.bulk_search import BulkSearchManager
 from utils.data_helpers import DataFormatter
-from views.risk_components import RiskViewComponents
 from views.process_components import ProcessViewComponents
 
 
 class BulkSearchViewComponents:
-    """UI components for bulk search results"""
+    """Componentes de UI para resultados de pesquisa em lote"""
 
     @staticmethod
     def render_bulk_search_results(bulk_results: Dict):
-        """Render results from bulk CPF search"""
+        """Renderiza resultados da pesquisa em lote de CPFs"""
         if not bulk_results:
             return
 
-        manager = BulkSearchManager(None, None)
+        manager = BulkSearchManager(None)
         manager.results = bulk_results
         summary_stats = manager.get_summary()
 
-        # Summary metrics
-        st.subheader("📊 Bulk Search Summary")
+        # Métricas do resumo
+        st.subheader("📊 Resumo da Pesquisa em Lote")
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            st.metric("Total Searched", summary_stats['total_searched'])
+            st.metric("Total Pesquisado", summary_stats['total_searched'])
         with col2:
             st.metric("✅ Nada Consta", summary_stats['nada_consta'])
         with col3:
-            st.metric("⚠️ With Processes", summary_stats['with_processes'])
+            st.metric("⚠️ Com Processos", summary_stats['with_processes'])
         with col4:
-            st.metric("📋 Total Processes", summary_stats['total_processes'])
+            st.metric("📋 Total de Processos", summary_stats['total_processes'])
 
-        # Risk summary metrics
-        st.subheader("🎯 Risk Assessment Summary")
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("✅ Low Risk", summary_stats.get('low_risk', 0))
-        with col2:
-            st.metric("⚠️ Medium Risk", summary_stats.get('medium_risk', 0))
-        with col3:
-            st.metric("🔴 High Risk", summary_stats.get('high_risk', 0))
-        with col4:
-            st.metric("⛔ Critical Risk", summary_stats.get('critical_risk', 0))
-
-        # Export button
+        # Botão de exportação
         if summary_stats['total_searched'] > 0:
             csv_data = manager.export_results_to_csv()
             st.download_button(
-                label="📥 Download Results (CSV)",
+                label="📥 Baixar Resultados (CSV)",
                 data=csv_data,
-                file_name=f"bulk_search_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                file_name=f"resultados_pesquisa_lote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
 
         st.markdown("---")
 
-        # Nada Consta section
+        # Seção Nada Consta
         if bulk_results['nada_consta']:
             with st.expander(f"✅ Nada Consta ({len(bulk_results['nada_consta'])} CPFs)", expanded=True):
-                st.success(f"**{len(bulk_results['nada_consta'])}** CPFs without judicial processes")
+                st.success(f"**{len(bulk_results['nada_consta'])}** CPFs sem processos judiciais")
 
-                # Display with risk badges
+                # Exibir CPFs
                 cpf_list = bulk_results['nada_consta']
-                risk_assessments = bulk_results.get('risk_assessments', {})
-
                 for cpf in cpf_list:
-                    risk_data = risk_assessments.get(cpf, {})
-                    risk_badge = RiskViewComponents.render_risk_badge(risk_data)
-                    st.write(f"✓ {DataFormatter.format_cpf(cpf)} - {risk_badge}")
+                    st.write(f"✓ {DataFormatter.format_cpf(cpf)}")
 
-        # Found processes section
+        # Seção de processos encontrados
         if bulk_results['found_processes']:
             st.markdown("---")
-            st.subheader(f"⚠️ CPFs with Processes ({len(bulk_results['found_processes'])})")
-
-            risk_assessments = bulk_results.get('risk_assessments', {})
+            st.subheader(f"⚠️ CPFs com Processos ({len(bulk_results['found_processes'])})")
 
             for cpf, processes in bulk_results['found_processes'].items():
-                risk_data = risk_assessments.get(cpf, {})
-                risk_badge = RiskViewComponents.render_risk_badge(risk_data)
+                with st.expander(f"CPF: {DataFormatter.format_cpf(cpf)} - {len(processes)} processo(s)", expanded=False):
+                    st.warning(f"**{len(processes)} processo(s) judicial(is) encontrado(s) para este CPF**")
 
-                with st.expander(f"CPF: {DataFormatter.format_cpf(cpf)} - {len(processes)} process(es) - {risk_badge}", expanded=False):
-                    st.warning(f"**{len(processes)} judicial process(es) found for this CPF**")
-
-                    # Display risk assessment
-                    if risk_data:
-                        RiskViewComponents.render_risk_assessment(risk_data, expanded=False)
-                        st.markdown("---")
-
-                    # Display each process
+                    # Exibir cada processo
                     for idx, process in enumerate(processes):
                         ProcessViewComponents.render_process_details(process, idx)
 
-        # Errors section
+        # Seção de erros
         if bulk_results['errors']:
             st.markdown("---")
-            with st.expander(f"❌ Errors ({len(bulk_results['errors'])})", expanded=False):
-                st.error(f"**{len(bulk_results['errors'])}** CPFs had errors during search")
+            with st.expander(f"❌ Erros ({len(bulk_results['errors'])})", expanded=False):
+                st.error(f"**{len(bulk_results['errors'])}** CPFs tiveram erros durante a pesquisa")
 
                 for error in bulk_results['errors']:
                     st.write(f"• {DataFormatter.format_cpf(error['cpf'])}: {error['error']}")
