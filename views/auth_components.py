@@ -1,19 +1,18 @@
 """
-Authentication View Components
-UI components for login and user info display
+Componentes de Visualização de Autenticação
+Componentes de UI para login e exibição de informações do usuário
 """
 import streamlit as st
 from datetime import datetime
 from models.auth import AuthenticationManager
-from models.analytics import PosthogAPI
 
 
 class AuthViewComponents:
-    """UI components for authentication"""
+    """Componentes de UI para autenticação"""
 
     @staticmethod
     def render_login_screen():
-        """Render login screen"""
+        """Renderiza tela de login"""
         st.markdown("""
         <style>
         .login-container {
@@ -38,50 +37,42 @@ class AuthViewComponents:
             with col2:
                 st.markdown('<div class="login-container">', unsafe_allow_html=True)
                 st.markdown('<h1 class="login-title">🔐 Login</h1>', unsafe_allow_html=True)
-                st.markdown('<h3 style="text-align: center; color: #666;">Legal Process Search</h3>', unsafe_allow_html=True)
+                st.markdown('<h3 style="text-align: center; color: #666;">Consulta de Processos Judiciais</h3>', unsafe_allow_html=True)
                 st.markdown("---")
 
-                username = st.text_input("👤 User:", placeholder="Enter your username")
-                password = st.text_input("🔒 Password:", type="password", placeholder="Enter your password")
+                username = st.text_input("👤 Usuário:", placeholder="Digite seu nome de usuário")
+                password = st.text_input("🔒 Senha:", type="password", placeholder="Digite sua senha")
 
                 st.markdown("<br>", unsafe_allow_html=True)
 
-                if st.button("🚀 Login", type="primary", use_container_width=True):
+                if st.button("🚀 Entrar", type="primary", use_container_width=True):
                     if not username or not password:
-                        st.error("❌ Please fill in all fields!")
+                        st.error("❌ Por favor, preencha todos os campos!")
                     elif AuthenticationManager.verify_credentials(username, password):
                         st.session_state.authenticated = True
                         st.session_state.username = username
                         st.session_state.login_time = datetime.now()
 
-                        if "ph" not in st.session_state:
-                            st.session_state.ph = PosthogAPI()
-
-                        st.session_state.ph.set_user(
-                            username,
-                            {"login_time": datetime.now().isoformat()}
-                        )
-
-                        st.success("✅ Login successful!")
+                        st.success("✅ Login realizado com sucesso!")
                         st.rerun()
                     else:
-                        st.error("❌ Invalid username or password!")
+                        st.error("❌ Usuário ou senha inválidos!")
 
                 st.markdown("---")
                 st.markdown('</div>', unsafe_allow_html=True)
 
     @staticmethod
     def render_user_info():
-        """Render user information in sidebar"""
+        """Renderiza informações do usuário na barra lateral"""
         if AuthenticationManager.is_authenticated():
             with st.sidebar:
                 st.markdown("---")
-                st.markdown("### 👤 Logged User")
-                st.write(f"**User:** {st.session_state.username}")
+                st.markdown("### 👤 Usuário Logado")
+                st.write(f"**Usuário:** {st.session_state.username}")
 
                 login_time = st.session_state.get('login_time')
                 if login_time:
                     st.write(f"**Login:** {login_time.strftime('%d/%m/%Y %H:%M')}")
 
-                if st.button("🚪 Logout", use_container_width=True):
+                if st.button("🚪 Sair", use_container_width=True):
                     AuthenticationManager.logout()

@@ -1,6 +1,6 @@
 """
-Process View Components
-UI components for displaying judicial process information
+Componentes de Visualização de Processos
+Componentes de UI para exibição de informações de processos judiciais
 """
 import streamlit as st
 from typing import Dict, List
@@ -10,16 +10,16 @@ from utils.file_storage import FileStorage
 
 
 class ProcessViewComponents:
-    """UI components for process display"""
+    """Componentes de UI para exibição de processos"""
 
     @staticmethod
     def render_process_movements(movements: List[Dict]):
-        """Render process movements"""
+        """Renderiza movimentações do processo"""
         if not movements:
-            st.info("No process movements found.")
+            st.info("Nenhuma movimentação do processo encontrada.")
             return
 
-        st.subheader(f"Process Movements ({len(movements)} movements)")
+        st.subheader(f"Movimentações do Processo ({len(movements)} movimentações)")
 
         for mov in sorted(movements, key=lambda x: x.get('data', ''), reverse=True):
             date = DataFormatter.format_date(mov.get('data'))
@@ -32,68 +32,68 @@ class ProcessViewComponents:
                 col1, col2 = st.columns(2)
 
                 with col1:
-                    st.write(f"**Index:** {mov.get('indice', 'N/A')}")
-                    st.write(f"**CNJ Code:** {mov.get('classificacaoCNJ', {}).get('codigoCNJ', '')}")
+                    st.write(f"**Índice:** {mov.get('indice', 'N/A')}")
+                    st.write(f"**Código CNJ:** {mov.get('classificacaoCNJ', {}).get('codigoCNJ', '')}")
 
                 with col2:
-                    st.write(f"**Date:** {date}")
-                    st.write(f"**Classification:** {classification}")
+                    st.write(f"**Data:** {date}")
+                    st.write(f"**Classificação:** {classification}")
 
                 if description:
-                    st.write("**Description:**")
+                    st.write("**Descrição:**")
                     st.write(description)
 
     @staticmethod
     def render_process_details(process: Dict, index: int):
-        """Render detailed process information"""
+        """Renderiza informações detalhadas do processo"""
         process_number = process.get('numeroProcessoUnico', 'N/A')
         details_key = f"detalhes_{process_number}"
         has_details = details_key in st.session_state
 
-        # Build title
+        # Construir título
         if has_details:
             movements_count = len(st.session_state[details_key].get('movimentos', []))
-            title_suffix = f" (DETAILS LOADED - {movements_count} movements)" if movements_count else " (DETAILS LOADED)"
-            title = f"Process: {process_number}{title_suffix}"
+            title_suffix = f" (DETALHES CARREGADOS - {movements_count} movimentações)" if movements_count else " (DETALHES CARREGADOS)"
+            title = f"Processo: {process_number}{title_suffix}"
         else:
-            title = f"Process: {process_number}"
+            title = f"Processo: {process_number}"
 
         with st.expander(title, expanded=False):
-            # Basic information
+            # Informações básicas
             col1, col2 = st.columns(2)
 
             with col1:
-                st.subheader("Court Information")
-                st.write(f"**Court:** {DataFormatter.clean_text(process.get('tribunal', 'N/A'))}")
-                st.write(f"**State:** {process.get('uf', 'N/A')}")
-                st.write(f"**Judge:** {DataFormatter.clean_text(process.get('orgaoJulgador', 'N/A'))}")
-                st.write(f"**Level:** {process.get('grauProcesso', 'N/A')}")
+                st.subheader("Informações do Tribunal")
+                st.write(f"**Tribunal:** {DataFormatter.clean_text(process.get('tribunal', 'N/A'))}")
+                st.write(f"**Estado:** {process.get('uf', 'N/A')}")
+                st.write(f"**Órgão Julgador:** {DataFormatter.clean_text(process.get('orgaoJulgador', 'N/A'))}")
+                st.write(f"**Grau:** {process.get('grauProcesso', 'N/A')}")
 
             with col2:
-                st.subheader("Dates")
-                st.write(f"**Distribution:** {DataFormatter.format_date(process.get('dataDistribuicao'))}")
-                st.write(f"**Filing:** {DataFormatter.format_date(process.get('dataAutuacao'))}")
+                st.subheader("Datas")
+                st.write(f"**Distribuição:** {DataFormatter.format_date(process.get('dataDistribuicao'))}")
+                st.write(f"**Autuação:** {DataFormatter.format_date(process.get('dataAutuacao'))}")
 
-            # Class and subjects
+            # Classe e assuntos
             process_class = process.get('classeProcessual', {})
             if process_class:
-                st.write(f"**Class:** {DataFormatter.clean_text(process_class.get('nome', 'N/A'))}")
+                st.write(f"**Classe:** {DataFormatter.clean_text(process_class.get('nome', 'N/A'))}")
 
             subjects = process.get('assuntosCNJ', [])
             if subjects:
-                st.write("**Subjects:**")
+                st.write("**Assuntos:**")
                 for subject in subjects:
-                    is_main = "Main" if subject.get('ePrincipal') else "Secondary"
+                    is_main = "Principal" if subject.get('ePrincipal') else "Secundário"
                     title = DataFormatter.clean_text(subject.get('titulo', 'N/A'))
                     st.write(f"  {is_main}: {title}")
 
-            # Case value
+            # Valor da causa
             case_value = process.get('valorCausa', {})
             if case_value:
-                st.write(f"**Case Value:** {DataFormatter.format_currency(case_value.get('valor'))}")
+                st.write(f"**Valor da Causa:** {DataFormatter.format_currency(case_value.get('valor'))}")
 
-            # Parties
-            st.subheader("Parties")
+            # Partes
+            st.subheader("Partes")
             for party in process.get('partes', []):
                 party_type = DataFormatter.clean_text(party.get('tipo', 'N/A'))
                 name = DataFormatter.clean_text(party.get('nome', 'N/A'))
@@ -101,7 +101,7 @@ class ProcessViewComponents:
                 doc_info = f" (CPF/CNPJ: {doc})" if doc else ""
                 st.write(f"**{party_type}:** {name}{doc_info}")
 
-                # Lawyers
+                # Advogados
                 for lawyer in party.get('advogados', []):
                     lawyer_name = DataFormatter.clean_text(lawyer.get('nome', 'N/A'))
                     oab = lawyer.get('oab', {})
@@ -111,9 +111,9 @@ class ProcessViewComponents:
             # URL
             process_url = process.get('urlProcesso')
             if process_url:
-                st.write(f"[Access on court website]({process_url})")
+                st.write(f"[Acessar no site do tribunal]({process_url})")
 
-            # Movements
+            # Movimentações
             movements = process.get('movimentos', [])
             if has_details:
                 detailed_movements = st.session_state[details_key].get('movimentos', [])
@@ -123,16 +123,16 @@ class ProcessViewComponents:
             if movements:
                 ProcessViewComponents.render_process_movements(movements)
             else:
-                if st.button("Get Details", key=f"btn_details_{process_number}_{index}"):
+                if st.button("Obter Detalhes", key=f"btn_details_{process_number}_{index}"):
                     ProcessViewComponents._fetch_process_details(process_number)
 
     @staticmethod
     def _fetch_process_details(process_number: str):
-        """Fetch detailed process information"""
+        """Busca informações detalhadas do processo"""
         api = st.session_state.get('api') or PredictusAPI()
         st.session_state.api = api
 
-        with st.spinner("Fetching details..."):
+        with st.spinner("Buscando detalhes..."):
             details = api.search_by_process_number(process_number)
 
             if details and len(details) > 0:
@@ -140,22 +140,22 @@ class ProcessViewComponents:
                 details_key = f"detalhes_{process_number}"
                 st.session_state[details_key] = detailed_process
 
-                # Save to history
+                # Salvar no histórico
                 history = st.session_state.get('historico_pesquisas', [])
                 FileStorage.save_process_details(process_number, detailed_process, history)
                 st.session_state.historico_pesquisas = history
 
                 movements = detailed_process.get('movimentos', [])
                 if movements:
-                    st.success(f"✅ Found {len(movements)} movements! 💾 Details saved.")
+                    st.success(f"✅ Encontradas {len(movements)} movimentações! 💾 Detalhes salvos.")
                     ProcessViewComponents.render_process_movements(movements)
                 else:
-                    st.success("✅ Process consulted and saved! No additional movements.")
+                    st.success("✅ Processo consultado e salvo! Sem movimentações adicionais.")
 
-                # Force re-render
+                # Forçar re-renderização
                 update_key = f"update_{process_number}"
                 if update_key not in st.session_state:
                     st.session_state[update_key] = True
                     st.rerun()
             else:
-                st.warning("Could not obtain process details.")
+                st.warning("Não foi possível obter detalhes do processo.")
