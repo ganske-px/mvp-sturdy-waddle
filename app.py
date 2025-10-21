@@ -1,556 +1,414 @@
-import streamlit as st
-import requests
+"""
+Legal Process Search Application - Refactored with MVC Pattern
+Main application entry point
+"""
 import re
-import json
-import os
-import hashlib
+import streamlit as st
 from datetime import datetime
 
-class PredictusAPI:
-    def __init__(self):
-        self.base_url = "https://api.predictus.inf.br"
-        self.token = None
-        # Usar secrets do Streamlit em vez de hardcoded
-        self.username = st.secrets.get("PREDICTUS_USERNAME", "motoristapx.teste")
-        self.password = st.secrets.get("PREDICTUS_PASSWORD", "")
-    
-    def authenticate(self):
-        try:
-            response = requests.post(f"{self.base_url}/auth", 
-                json={"username": self.username, "password": self.password},
-                headers={"Content-Type": "application/json", "User-Agent": "streamlit-app/1.0"})
-            if response.status_code == 200:
-                self.token = response.json().get("accessToken")
-                return bool(self.token)
-            st.error(f"Erro na autenticação: {response.status_code}")
-        except Exception as e:
-            st.error(f"Erro na autenticação: {str(e)}")
-        return False
-    
-    def _request(self, endpoint, payload):
-        if not self.token and not self.authenticate():
-            return None
-        
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}
-        
-        try:
-            response = requests.post(f"{self.base_url}{endpoint}", json=payload, headers=headers)
-            if response.status_code == 401 and self.authenticate():
-                headers["Authorization"] = f"Bearer {self.token}"
-                response = requests.post(f"{self.base_url}{endpoint}", json=payload, headers=headers)
-            return response.json() if response.status_code == 200 else None
-        except Exception as e:
-            st.error(f"Erro na requisição: {str(e)}")
-            return None
-    
-    def buscar_por_nome(self, nome):
-        return self._request("/predictus-api/processos/judiciais/buscarPorNomeParte", {"nome": nome.upper()})
-    
-    def buscar_por_cpf(self, cpf):
-        return self._request("/predictus-api/processos/judiciais/buscarPorCPFParte", {"cpf": cpf})
-    
-    def buscar_por_numero_cnj(self, numero_processo):
-        return self._request("/predictus-api/processos/judiciais/buscarPorNumeroCNJ", {"numeroProcessoUnico": numero_processo})
+# Configuration
+from config.settings import MAX_HISTORY_ITEMS
 
-# === SISTEMA DE AUTENTICAÇÃO ===
+# Models
+from models.auth import AuthenticationManager
+from models.predictus_api import PredictusAPI
+from models.analytics import PosthogAPI
+from models.risk_assessment import RiskAssessor
 
-def hash_password(password):
-    """Cria hash SHA256 da senha"""
-    return hashlib.sha256(password.encode()).hexdigest()
+# Controllers
+from controllers.csv_processor import CSVProcessor
+from controllers.bulk_search import BulkSearchManager
 
-def verificar_credenciais(username, password):
-    """Verifica se as credenciais são válidas"""
-    # Buscar credenciais nos secrets do Streamlit
-    usuarios_validos = st.secrets.get("USUARIOS_APP", {})
-    
-    # Se não tiver usuários nos secrets, usar padrão
-    if not usuarios_validos:
-        usuarios_validos = {
-            "admin": "admin123",
-            "user": "user123"
-        }
-    
-    # Verificar se usuário existe e senha está correta
-    if username in usuarios_validos:
-        senha_esperada = usuarios_validos[username]
-        return password == senha_esperada
-    
-    return False
+# Views
+from views.auth_components import AuthViewComponents
+from views.risk_components import RiskViewComponents
+from views.process_components import ProcessViewComponents
+from views.bulk_search_components import BulkSearchViewComponents
 
-def tela_login():
-    """Exibe a tela de login"""
-    st.set_page_config(page_title="Login - Consulta Processos", page_icon="🔐", layout="centered")
-    
-    # Estilo CSS para a tela de login
+# Utils
+from utils.data_helpers import CPFValidator, DataFormatter
+from utils.file_storage import FileStorage
+
+
+def initialize_session_state():
+    """Initialize session state variables"""
+    defaults = {
+        'resultados': None,
+        'historico_pesquisas': FileStorage.load_search_history(),
+        'ph': PosthogAPI(),
+        'risk_assessment': None
+    }
+
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def render_search_interface():
+    """Render the main search interface"""
+    st.title("Legal Process Search")
+    st.markdown("---")
+
+    # Create tabs for single and bulk search
+    tab1, tab2 = st.tabs(["🔍 Single Search", "📂 Bulk Search (CSV)"])
+
+    with tab1:
+        render_single_search_tab()
+
+    with tab2:
+        render_bulk_search_tab()
+
+
+def render_single_search_tab():
+    """Render single search tab"""
+    st.subheader("Search by Name or CPF")
+
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        search_input = st.text_input(
+            "Full name or CPF:",
+            placeholder="Ex: João Silva or 123.456.789-10"
+        )
+
+    with col2:
+        if st.button("🔍 New Search", type="primary", use_container_width=True):
+            if not search_input.strip():
+                st.warning("Enter a name or CPF to search.")
+                return
+
+            perform_search(search_input)
+
+
+def render_bulk_search_tab():
+    """Render bulk search tab"""
+    st.subheader("Bulk CPF Search via CSV")
+
     st.markdown("""
-    <style>
-    .login-container {
-        max-width: 400px;
-        margin: 0 auto;
-        padding: 2rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        background-color: #f8f9fa;
-    }
-    .login-title {
-        text-align: center;
-        color: #1f77b4;
-        margin-bottom: 2rem;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Container centralizado
-    with st.container():
-        col1, col2, col3 = st.columns([1, 2, 1])
-        
+    Upload a CSV file containing CPFs to search multiple records at once.
+    The system will automatically extract all CPFs from the file.
+    """)
+
+    # File upload
+    uploaded_file = st.file_uploader(
+        "Choose a CSV file",
+        type=['csv'],
+        help="Upload a CSV file containing CPFs. Maximum file size: 10MB"
+    )
+
+    if uploaded_file is not None:
+        # Validate file
+        is_valid, message = CSVProcessor.validate_csv_file(uploaded_file)
+
+        if not is_valid:
+            st.error(f"❌ {message}")
+            return
+
+        # Process CSV
+        with st.spinner("Processing CSV file..."):
+            cpf_list, _ = CSVProcessor.process_csv_file(uploaded_file)
+
+        if not cpf_list:
+            st.warning("⚠️ No valid CPFs found in the uploaded file.")
+            return
+
+        # Display preview
+        st.success(f"✅ Found {len(cpf_list)} unique CPFs in the file")
+
+        with st.expander("📋 Preview extracted CPFs", expanded=False):
+            # Format CPFs for display
+            formatted_cpfs = [DataFormatter.format_cpf(cpf) for cpf in cpf_list[:50]]
+
+            if len(cpf_list) <= 50:
+                st.write(", ".join(formatted_cpfs))
+            else:
+                st.write(", ".join(formatted_cpfs))
+                st.info(f"... and {len(cpf_list) - 50} more CPFs")
+
+        # Search button
+        col1, col2 = st.columns([1, 3])
+
+        with col1:
+            if st.button("🔍 Start Bulk Search", type="primary", use_container_width=True):
+                perform_bulk_search(cpf_list)
+
         with col2:
-            st.markdown('<div class="login-container">', unsafe_allow_html=True)
-            
-            st.markdown('<h1 class="login-title">🔐 Login</h1>', unsafe_allow_html=True)
-            st.markdown('<h3 style="text-align: center; color: #666;">Consulta de Processos Judiciais</h3>', unsafe_allow_html=True)
-            
-            st.markdown("---")
-            
-            # Campos de login
-            username = st.text_input("👤 Usuário:", placeholder="Digite seu usuário")
-            password = st.text_input("🔒 Senha:", type="password", placeholder="Digite sua senha")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Botão de login
-            if st.button("🚀 Entrar", type="primary", use_container_width=True):
-                if not username or not password:
-                    st.error("❌ Preencha todos os campos!")
-                elif verificar_credenciais(username, password):
-                    st.session_state.authenticated = True
-                    st.session_state.username = username
-                    st.session_state.login_time = datetime.now()
-                    st.success("✅ Login realizado com sucesso!")
-                    st.rerun()
-                else:
-                    st.error("❌ Usuário ou senha inválidos!")
-            
-            st.markdown("---")
-            
-            # Informações de acesso
-            with st.expander("ℹ️ Informações de Acesso"):
-                st.info("""
-                **Usuários padrão:**
-                - admin / admin123
-                - user / user123
-                
-                **Para personalizar:**
-                Configure no arquivo .streamlit/secrets.toml:
-                ```toml
-                [USUARIOS_APP]
-                "seu_usuario" = "sua_senha"
-                "outro_user" = "outra_senha"
-                ```
-                """)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.info(f"This will search {len(cpf_list)} CPFs. This may take several minutes.")
 
-def verificar_autenticacao():
-    """Verifica se o usuário está autenticado"""
-    return st.session_state.get('authenticated', False)
+    # Display previous bulk search results if available
+    if 'bulk_results' in st.session_state and st.session_state.bulk_results:
+        st.markdown("---")
+        st.subheader("📊 Last Bulk Search Results")
+        BulkSearchViewComponents.render_bulk_search_results(st.session_state.bulk_results)
 
-def logout():
-    """Realiza logout do usuário"""
-    # Limpar todos os dados da sessão relacionados à autenticação
-    keys_to_remove = ['authenticated', 'username', 'login_time']
-    for key in keys_to_remove:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    st.success("✅ Logout realizado com sucesso!")
+
+def perform_search(search_input: str):
+    """Perform search based on input"""
+    api = st.session_state.get('api') or PredictusAPI()
+    st.session_state.api = api
+
+    # Clear previous risk assessment
+    st.session_state.risk_assessment = None
+
+    with st.spinner("Searching processes..."):
+        if CPFValidator.is_cpf(search_input):
+            cpf = re.sub(r'\D', '', search_input)
+            st.info(f"Searching by CPF: {cpf}")
+            results = api.search_by_cpf(cpf)
+            search_type, display_term = "CPF", cpf
+        else:
+            st.info(f"Searching by name: {search_input}")
+            results = api.search_by_name(search_input)
+            search_type, display_term = "Name", search_input
+
+        st.session_state.ph.track_search(search_input, is_new=True)
+
+    st.session_state.resultados = results
+    st.session_state.last_search_term = display_term
+
+    if results is not None:
+        search_info = {
+            'termo': display_term,
+            'tipo': search_type,
+            'data_hora': datetime.now().strftime('%d/%m/%Y %H:%M'),
+            'total_processos': len(results),
+            'resultados': results
+        }
+
+        st.session_state.historico_pesquisas.insert(0, search_info)
+        if len(st.session_state.historico_pesquisas) > MAX_HISTORY_ITEMS:
+            st.session_state.historico_pesquisas = st.session_state.historico_pesquisas[:MAX_HISTORY_ITEMS]
+
+        if FileStorage.save_search_history(st.session_state.historico_pesquisas):
+            st.success("✅ Search saved to permanent history!")
+
+
+def perform_bulk_search(cpf_list: list):
+    """Perform bulk CPF search"""
+    api = st.session_state.get('api') or PredictusAPI()
+    st.session_state.api = api
+
+    posthog = st.session_state.get('ph') or PosthogAPI()
+    st.session_state.ph = posthog
+
+    # Create bulk search manager
+    bulk_manager = BulkSearchManager(api, posthog)
+
+    # Progress tracking
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    def update_progress(current: int, total: int, cpf: str):
+        """Update progress bar and status"""
+        progress = current / total
+        progress_bar.progress(progress)
+        status_text.text(f"Searching {current}/{total}: {DataFormatter.format_cpf(cpf)}")
+
+    # Perform search
+    with st.spinner("Performing bulk search..."):
+        results = bulk_manager.search_cpf_list(cpf_list, progress_callback=update_progress)
+
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+
+    # Store results
+    st.session_state.bulk_results = results
+
+    # Display summary
+    summary = bulk_manager.get_summary()
+    st.success(f"✅ Bulk search completed! Searched {summary['total_searched']} CPFs")
+
+    # Rerun to display results
     st.rerun()
 
-def exibir_info_usuario():
-    """Exibe informações do usuário logado na sidebar"""
-    if verificar_autenticacao():
-        with st.sidebar:
-            st.markdown("---")
-            st.markdown("### 👤 Usuário Logado")
-            st.write(f"**Usuário:** {st.session_state.username}")
-            
-            login_time = st.session_state.get('login_time')
-            if login_time:
-                st.write(f"**Login:** {login_time.strftime('%d/%m/%Y %H:%M')}")
-            
-            if st.button("🚪 Logout", use_container_width=True):
-                logout()
 
-# === FUNÇÕES ORIGINAIS (sem alteração) ===
-
-def limpar_texto(texto):
-    if not texto: return texto
-    subs = {'º': 'o', 'ª': 'a', '–': '-', '—': '-', '"': '"', '"': '"', ''': "'", ''': "'", '…': '...'}
-    for k, v in subs.items():
-        texto = texto.replace(k, v)
-    return texto
-
-def is_cpf(texto):
-    cpf = re.sub(r'\D', '', texto)
-    return len(cpf) == 11 and cpf != cpf[0] * 11
-
-def formatar_valor(valor):
-    if valor:
-        try:
-            return f"R$ {float(valor):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        except:
-            return f"R$ {valor}"
-    return "Não informado"
-
-def formatar_data(data_str):
-    if data_str:
-        try:
-            data = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
-            return data.strftime('%d/%m/%Y')
-        except:
-            return data_str
-    return "Não informado"
-
-def carregar_historico():
-    try:
-        if os.path.exists("historico_pesquisas.json"):
-            with open("historico_pesquisas.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception as e:
-        st.error(f"Erro ao carregar histórico: {str(e)}")
-    return []
-
-def salvar_historico(historico):
-    try:
-        with open("historico_pesquisas.json", "w", encoding="utf-8") as f:
-            json.dump(historico, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception as e:
-        st.error(f"Erro ao salvar histórico: {str(e)}")
-        return False
-
-def salvar_detalhes_processo(numero_processo, detalhes):
-    try:
-        # Trabalhar diretamente com o session_state em vez de recarregar do arquivo
-        historico = st.session_state.historico_pesquisas.copy()
-        for pesquisa in historico:
-            for processo in pesquisa['resultados']:
-                if processo.get('numeroProcessoUnico') == numero_processo:
-                    if 'detalhes_processos' not in pesquisa:
-                        pesquisa['detalhes_processos'] = {}
-                    pesquisa['detalhes_processos'][numero_processo] = detalhes
-                    
-                    # Salvar no arquivo e atualizar session_state apenas se salvar com sucesso
-                    if salvar_historico(historico):
-                        st.session_state.historico_pesquisas = historico
-                        return True
-                    return False
-        return False
-    except Exception as e:
-        st.error(f"Erro ao salvar detalhes: {str(e)}")
-        return False
-
-def exibir_movimentos(movimentos):
-    if not movimentos:
-        st.info("Nenhum movimento processual encontrado.")
+def render_search_results():
+    """Render search results"""
+    if st.session_state.resultados is None:
         return
-    
-    st.subheader(f"Movimentações Processuais ({len(movimentos)} movimentos)")
-    for mov in sorted(movimentos, key=lambda x: x.get('data', ''), reverse=True):
-        data_mov = formatar_data(mov.get('data'))
-        nome_class = limpar_texto(mov.get('classificacaoCNJ', {}).get('nome', 'N/A'))
-        descricao = limpar_texto(mov.get('descricao', ''))
-        
-        with st.expander(f"{data_mov} - {nome_class}", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"**Índice:** {mov.get('indice', 'N/A')}")
-                st.write(f"**Código CNJ:** {mov.get('classificacaoCNJ', {}).get('codigoCNJ', '')}")
-            with col2:
-                st.write(f"**Data:** {data_mov}")
-                st.write(f"**Classificação:** {nome_class}")
-            if descricao:
-                st.write("**Descrição:**")
-                st.write(descricao)
 
-def exibir_processo(processo, indice):
-    numero_processo = processo.get('numeroProcessoUnico', 'N/A')
-    key_detalhes = f"detalhes_{numero_processo}"
-    tem_detalhes = key_detalhes in st.session_state
-    
-    if tem_detalhes:
-        movimentos_count = len(st.session_state[key_detalhes].get('movimentos', []))
-        titulo = f"Processo: {numero_processo} (DETALHES CARREGADOS - {movimentos_count} movimentos)" if movimentos_count else f"Processo: {numero_processo} (DETALHES CARREGADOS)"
-    else:
-        titulo = f"Processo: {numero_processo}"
-    
-    with st.expander(titulo, expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Informações do Tribunal")
-            st.write(f"**Tribunal:** {limpar_texto(processo.get('tribunal', 'N/A'))}")
-            st.write(f"**UF:** {processo.get('uf', 'N/A')}")
-            st.write(f"**Órgão:** {limpar_texto(processo.get('orgaoJulgador', 'N/A'))}")
-            st.write(f"**Grau:** {processo.get('grauProcesso', 'N/A')}")
-        
-        with col2:
-            st.subheader("Datas")
-            st.write(f"**Distribuição:** {formatar_data(processo.get('dataDistribuicao'))}")
-            st.write(f"**Autuação:** {formatar_data(processo.get('dataAutuacao'))}")
-        
-        classe = processo.get('classeProcessual', {})
-        if classe:
-            st.write(f"**Classe:** {limpar_texto(classe.get('nome', 'N/A'))}")
-        
-        assuntos = processo.get('assuntosCNJ', [])
-        if assuntos:
-            st.write("**Assuntos:**")
-            for assunto in assuntos:
-                principal = "Principal" if assunto.get('ePrincipal') else "Secundário"
-                titulo = limpar_texto(assunto.get('titulo', 'N/A'))
-                st.write(f"  {principal}: {titulo}")
-        
-        valor_causa = processo.get('valorCausa', {})
-        if valor_causa:
-            st.write(f"**Valor da Causa:** {formatar_valor(valor_causa.get('valor'))}")
-        
-        st.subheader("Partes")
-        for parte in processo.get('partes', []):
-            tipo = limpar_texto(parte.get('tipo', 'N/A'))
-            nome = limpar_texto(parte.get('nome', 'N/A'))
-            doc = parte.get('cpf') or parte.get('cnpj', '')
-            doc_info = f" (CPF/CNPJ: {doc})" if doc else ""
-            st.write(f"**{tipo}:** {nome}{doc_info}")
-            
-            for adv in parte.get('advogados', []):
-                nome_adv = limpar_texto(adv.get('nome', 'N/A'))
-                oab = adv.get('oab', {})
-                oab_info = f"OAB/{oab.get('uf')}: {oab.get('numero')}" if oab else ""
-                st.write(f"  {nome_adv} {oab_info}")
-        
-        url_processo = processo.get('urlProcesso')
-        if url_processo:
-            st.write(f"[Acessar no tribunal]({url_processo})")
-        
-        movimentos = processo.get('movimentos', [])
-        if tem_detalhes:
-            movimentos_detalhados = st.session_state[key_detalhes].get('movimentos', [])
-            if len(movimentos_detalhados) > len(movimentos):
-                movimentos = movimentos_detalhados
-        
-        if movimentos:
-            exibir_movimentos(movimentos)
-        else:
-            if st.button("Buscar Detalhes", key=f"btn_detalhes_{numero_processo}_{indice}"):
-                api = st.session_state.get('api') or PredictusAPI()
-                st.session_state.api = api
-                
-                with st.spinner("Buscando detalhes..."):
-                    detalhes = api.buscar_por_numero_cnj(numero_processo)
-                    
-                    if detalhes and len(detalhes) > 0:
-                        processo_detalhado = detalhes[0]
-                        st.session_state[key_detalhes] = processo_detalhado
-                        
-                        # Salvar detalhes primeiro
-                        salvar_detalhes_processo(numero_processo, processo_detalhado)
-                        
-                        movimentos = processo_detalhado.get('movimentos', [])
-                        if movimentos:
-                            st.success(f"✅ Encontrados {len(movimentos)} movimentos! 💾 Detalhes salvos.")
-                            exibir_movimentos(movimentos)
-                        else:
-                            st.success("✅ Processo consultado e salvo! Sem movimentos adicionais.")
-                        
-                        # Criar um estado temporário para forçar re-renderização apenas uma vez
-                        if f"atualizar_{numero_processo}" not in st.session_state:
-                            st.session_state[f"atualizar_{numero_processo}"] = True
-                            st.rerun()
-                    else:
-                        st.warning("Não foi possível obter detalhes do processo.")
+    results = st.session_state.resultados
 
-def app_principal():
-    """Aplicação principal (após login)"""
-    st.set_page_config(page_title="Consulta Processos", page_icon="⚖️", layout="wide")
-    
-    st.title("Consulta de Processos Judiciais")
+    if len(results) == 0:
+        st.warning("No processes found.")
+
+        # Even for clean records, show risk assessment
+        if 'risk_assessment' not in st.session_state or st.session_state.risk_assessment is None:
+            risk_assessor = RiskAssessor()
+            search_term = st.session_state.get('last_search_term', 'N/A')
+            risk_data = risk_assessor.assess_risk([], {"search_term": search_term})
+            st.session_state.risk_assessment = risk_data
+
+        RiskViewComponents.render_risk_assessment(st.session_state.risk_assessment, expanded=True)
+        return
+
+    st.success(f"Found {len(results)} processes")
+
+    # Calculate risk assessment
+    if 'risk_assessment' not in st.session_state or st.session_state.risk_assessment is None:
+        with st.spinner("Analyzing risk factors..."):
+            risk_assessor = RiskAssessor()
+            search_term = st.session_state.get('last_search_term', 'N/A')
+            risk_data = risk_assessor.assess_risk(results, {"search_term": search_term})
+            st.session_state.risk_assessment = risk_data
+
+    # Display risk assessment
+    RiskViewComponents.render_risk_assessment(st.session_state.risk_assessment, expanded=True)
+
     st.markdown("---")
-    
-    if 'resultados' not in st.session_state:
-        st.session_state.resultados = None
-    if 'historico_pesquisas' not in st.session_state:
-        st.session_state.historico_pesquisas = carregar_historico()
-    
-    st.subheader("Buscar Processos")
-    
-    # Campos alinhados na mesma linha com proporções ajustadas
-    col1, col2 = st.columns([3, 1])
-    
+
+    # Statistics
+    courts = {}
+    total_value = 0
+
+    for proc in results:
+        court = proc.get('tribunal', 'N/A')
+        courts[court] = courts.get(court, 0) + 1
+
+        value = proc.get('valorCausa', {}).get('valor', 0)
+        if value:
+            try:
+                total_value += float(value)
+            except (ValueError, TypeError):
+                pass
+
+    col1, col2, col3 = st.columns(3)
     with col1:
-        entrada = st.text_input("Nome completo ou CPF:", placeholder="Ex: João Silva ou 123.456.789-10")
-    
+        st.metric("Total", len(results))
     with col2:
-        if st.button("🔍 Nova Busca", type="primary", use_container_width=True):
-            if not entrada.strip():
-                st.warning("Digite um nome ou CPF para pesquisar.")
-                return
-            
-            api = st.session_state.get('api') or PredictusAPI()
-            st.session_state.api = api
-            
-            with st.spinner("Buscando processos..."):
-                if is_cpf(entrada):
-                    cpf = re.sub(r'\D', '', entrada)
-                    st.info(f"Buscando por CPF: {cpf}")
-                    resultados = api.buscar_por_cpf(cpf)
-                    tipo_busca, termo_exibicao = "CPF", cpf
-                else:
-                    st.info(f"Buscando por nome: {entrada}")
-                    resultados = api.buscar_por_nome(entrada)
-                    tipo_busca, termo_exibicao = "Nome", entrada
-            
-            st.session_state.resultados = resultados
-            
-            if resultados is not None:
-                pesquisa_info = {
-                    'termo': termo_exibicao,
-                    'tipo': tipo_busca,
-                    'data_hora': datetime.now().strftime('%d/%m/%Y %H:%M'),
-                    'total_processos': len(resultados),
-                    'resultados': resultados
-                }
-                
-                st.session_state.historico_pesquisas.insert(0, pesquisa_info)
-                if len(st.session_state.historico_pesquisas) > 50:
-                    st.session_state.historico_pesquisas = st.session_state.historico_pesquisas[:50]
-                
-                if salvar_historico(st.session_state.historico_pesquisas):
-                    st.success("✅ Pesquisa salva no histórico permanente!")
-    
-    if st.session_state.resultados is not None:
-        resultados = st.session_state.resultados
-        
-        if len(resultados) == 0:
-            st.warning("Nenhum processo encontrado.")
-        else:
-            st.success(f"Encontrados {len(resultados)} processos")
-            
-            tribunais = {}
-            valor_total = 0
-            
-            for proc in resultados:
-                tribunal = proc.get('tribunal', 'N/A')
-                tribunais[tribunal] = tribunais.get(tribunal, 0) + 1
-                valor = proc.get('valorCausa', {}).get('valor', 0)
-                if valor:
-                    try:
-                        valor_total += float(valor)
-                    except:
-                        pass
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total", len(resultados))
-            with col2:
-                tribunal_top = max(tribunais, key=tribunais.get) if tribunais else "N/A"
-                st.metric("Tribunal Principal", tribunal_top)
-            with col3:
-                st.metric("Valor Total", formatar_valor(valor_total))
-            
-            st.markdown("---")
-        
-        st.subheader("📋 Processos Encontrados")
-        for i, processo in enumerate(resultados):
-            exibir_processo(processo, i)
-    
+        main_court = max(courts, key=courts.get) if courts else "N/A"
+        st.metric("Main Court", main_court)
+    with col3:
+        st.metric("Total Value", DataFormatter.format_currency(total_value))
+
+    st.markdown("---")
+    st.subheader("📋 Found Processes")
+
+    for i, process in enumerate(results):
+        ProcessViewComponents.render_process_details(process, i)
+
+
+def render_sidebar():
+    """Render sidebar with information and history"""
     with st.sidebar:
-        st.header("Informações")
+        st.header("Information")
         st.markdown("""
-        **Como usar:**
-        1. Digite nome completo ou CPF
-        2. Clique em "Buscar"
-        3. Navegue pelos processos
-        4. Use "Buscar Detalhes" para movimentações
-        
-        **Recursos:**
-        - 💾 Histórico salvo automaticamente
-        - 🔄 Pesquisas + detalhes persistem após reload
-        - 🔍 Busca por nome ou CPF
-        - 📋 Detalhes completos dos processos
-        - ⚖️ Movimentações processuais salvas
+        **How to use:**
+        1. Enter full name or CPF
+        2. Click "Search"
+        3. Navigate through processes
+        4. Use "Get Details" for movements
+
+        **Features:**
+        - 💾 History saved automatically
+        - 🔄 Searches + details persist after reload
+        - 🔍 Search by name or CPF
+        - 📋 Complete process details
+        - ⚖️ Saved process movements
+        - 🎯 AI-powered risk assessment
         """)
-        
-        st.markdown("---")
-        st.header("Histórico de Pesquisas")
-        
-        if st.session_state.historico_pesquisas:
-            st.write(f"**{len(st.session_state.historico_pesquisas)} pesquisas salvas**")
-            st.caption("💾 Histórico salvo automaticamente")
-            
-            for i, pesquisa in enumerate(st.session_state.historico_pesquisas):
-                detalhes_count = len(pesquisa.get('detalhes_processos', {}))
-                detalhes_info = f" + {detalhes_count} detalhados" if detalhes_count > 0 else ""
-                
-                with st.expander(f"{pesquisa['tipo']}: {pesquisa['termo'][:20]}{'...' if len(pesquisa['termo']) > 20 else ''}", expanded=False):
-                    st.write(f"**Tipo:** {pesquisa['tipo']}")
-                    st.write(f"**Termo:** {pesquisa['termo']}")
-                    st.write(f"**Data/Hora:** {pesquisa['data_hora']}")
-                    st.write(f"**Processos:** {pesquisa['total_processos']}{detalhes_info}")
-                    
-                    if detalhes_count > 0:
-                        st.write(f"**💾 Detalhes salvos:** {detalhes_count} processos")
-                    
-                    # Botões lado a lado
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        if st.button("📂 Abrir", key=f"recarregar_{i}"):
-                            # Limpar resultados atuais para evitar duplicação
-                            st.session_state.resultados = None
-                            
-                            # Recarregar resultados da pesquisa
-                            st.session_state.resultados = pesquisa['resultados']
-                            
-                            # Carregar detalhes salvos
-                            detalhes_processos = pesquisa.get('detalhes_processos', {})
-                            for numero_processo, detalhes in detalhes_processos.items():
-                                st.session_state[f"detalhes_{numero_processo}"] = detalhes
-                            
-                            detalhes_count = len(detalhes_processos)
-                            if detalhes_count > 0:
-                                st.success(f"Pesquisa aberta: {pesquisa['total_processos']} processos + {detalhes_count} com detalhes salvos")
-                            else:
-                                st.success(f"Pesquisa aberta: {pesquisa['total_processos']} processos")
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("🗑️ Excluir", key=f"excluir_{i}"):
-                            # Remover a pesquisa do histórico
-                            st.session_state.historico_pesquisas.pop(i)
-                            
-                            # Salvar histórico atualizado no arquivo
-                            if salvar_historico(st.session_state.historico_pesquisas):
-                                st.success(f"✅ Pesquisa '{pesquisa['termo']}' excluída do histórico!")
-                            else:
-                                st.error("❌ Erro ao excluir pesquisa do arquivo.")
-                            
-                            st.rerun()
-        else:
-            st.info("Nenhuma pesquisa salva ainda.")
-            st.caption("💾 Pesquisas e detalhes são salvos automaticamente em 'historico_pesquisas.json'")
-        
-        # Exibir informações do usuário
-        exibir_info_usuario()
+
+        render_search_history()
+        AuthViewComponents.render_user_info()
+
+
+def render_search_history():
+    """Render search history in sidebar"""
+    st.markdown("---")
+    st.header("Search History")
+
+    history = st.session_state.historico_pesquisas
+
+    if not history:
+        st.info("No searches saved yet.")
+        st.caption("💾 Searches and details are saved automatically")
+        return
+
+    st.write(f"**{len(history)} saved searches**")
+    st.caption("💾 History saved automatically")
+
+    for i, search in enumerate(history):
+        details_count = len(search.get('detalhes_processos', {}))
+        details_info = f" + {details_count} detailed" if details_count > 0 else ""
+        term_display = search['termo'][:20] + ('...' if len(search['termo']) > 20 else '')
+
+        with st.expander(f"{search['tipo']}: {term_display}", expanded=False):
+            st.write(f"**Type:** {search['tipo']}")
+            st.write(f"**Term:** {search['termo']}")
+            st.write(f"**Date/Time:** {search['data_hora']}")
+            st.write(f"**Processes:** {search['total_processos']}{details_info}")
+
+            if details_count > 0:
+                st.write(f"**💾 Details saved:** {details_count} processes")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("📂 Open", key=f"reopen_{i}"):
+                    reopen_search(search)
+
+            with col2:
+                if st.button("🗑️ Delete", key=f"delete_{i}"):
+                    delete_search(search, i)
+
+
+def reopen_search(search: dict):
+    """Reopen a saved search"""
+    st.session_state.resultados = search['resultados']
+    st.session_state.risk_assessment = None  # Force recalculation
+
+    # Load saved details
+    details_processes = search.get('detalhes_processos', {})
+    for process_number, details in details_processes.items():
+        st.session_state[f"detalhes_{process_number}"] = details
+
+    details_count = len(details_processes)
+    if details_count > 0:
+        st.success(f"Search opened: {search['total_processos']} processes + {details_count} with saved details")
+    else:
+        st.success(f"Search opened: {search['total_processos']} processes")
+
+    st.session_state.ph.track_search(search['termo'], is_new=False)
+    st.rerun()
+
+
+def delete_search(search: dict, index: int):
+    """Delete a search from history"""
+    st.session_state.historico_pesquisas.pop(index)
+
+    if FileStorage.save_search_history(st.session_state.historico_pesquisas):
+        st.success(f"✅ Search '{search['termo']}' deleted from history!")
+    else:
+        st.error("❌ Error deleting search from file.")
+
+    st.rerun()
+
+
+def main_app():
+    """Main application after login"""
+    initialize_session_state()
+    render_search_interface()
+    render_search_results()
+    render_sidebar()
+
 
 def main():
-    """Função principal que controla fluxo de autenticação"""
-    # Verificar se usuário está autenticado
-    if not verificar_autenticacao():
-        tela_login()
+    """Main function controlling authentication flow"""
+    st.set_page_config(
+        page_title="Legal Process Search MVP",
+        page_icon="⚖️",
+        layout="wide"
+    )
+
+    if "ph" not in st.session_state:
+        st.session_state.ph = PosthogAPI()
+
+    if not AuthenticationManager.is_authenticated():
+        AuthViewComponents.render_login_screen()
     else:
-        app_principal()
+        main_app()
+
 
 if __name__ == "__main__":
     main()
-    
