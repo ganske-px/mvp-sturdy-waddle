@@ -15,7 +15,7 @@ MAX_HISTORY_ITEMS = 50
 REQUEST_TIMEOUT = 30
 
 # API Configuration
-PREDICTUS_BASE_URL = "https://api.predictus.inf.br"
+PREDICTUS_BASE_URL = "https://api.predictus.com.br"
 
 # File Upload Limits
 MAX_FILE_SIZE_MB = 10
