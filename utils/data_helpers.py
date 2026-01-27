@@ -107,3 +107,55 @@ class CPFValidator:
                 valid_cpfs.append(cpf.zfill(11))
 
         return valid_cpfs
+
+
+class CNPJValidator:
+    """CNPJ validation utilities"""
+
+    @staticmethod
+    def is_cnpj(text: str) -> bool:
+        """Check if text is a valid CNPJ format (14 digits)"""
+        if not text:
+            return False
+
+        cnpj = re.sub(r'\D', '', text)
+        return len(cnpj) == 14 and cnpj != cnpj[0] * 14
+
+    @staticmethod
+    def format_cnpj(cnpj: str) -> str:
+        """Format CNPJ as XX.XXX.XXX/XXXX-XX"""
+        if not cnpj:
+            return ""
+
+        # Remove all non-digit characters
+        cnpj_digits = re.sub(r'\D', '', cnpj)
+
+        # Ensure 14 digits with zero-padding
+        cnpj_digits = cnpj_digits.zfill(14)
+
+        # Validate length
+        if len(cnpj_digits) != 14:
+            return cnpj  # Return original if invalid
+
+        # Format as XX.XXX.XXX/XXXX-XX
+        return f"{cnpj_digits[:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:]}"
+
+    @staticmethod
+    def extract_cnpjs_from_text(text: str) -> list:
+        """Extract all CNPJs from a text string"""
+        if not text:
+            return []
+
+        # Pattern for CNPJ: XX.XXX.XXX/XXXX-XX or XXXXXXXXXXXXXX
+        cnpj_pattern = r'\b\d{2}\.?\d{3}\.?\d{3}/??\d{4}-?\d{2}\b'
+        matches = re.findall(cnpj_pattern, str(text))
+
+        # Clean and validate CNPJs
+        valid_cnpjs = []
+        for match in matches:
+            cnpj = re.sub(r'\D', '', match)
+            if len(cnpj) == 14 and cnpj != cnpj[0] * 14:  # Basic validation
+                # Ensure CNPJ is stored with leading zeros (14 digits)
+                valid_cnpjs.append(cnpj.zfill(14))
+
+        return valid_cnpjs

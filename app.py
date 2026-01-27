@@ -23,7 +23,7 @@ from views.process_components import ProcessViewComponents
 from views.bulk_search_components import BulkSearchViewComponents
 
 # Utils
-from utils.data_helpers import CPFValidator, DataFormatter
+from utils.data_helpers import CPFValidator, CNPJValidator, DataFormatter
 from utils.file_storage import FileStorage
 
 
@@ -56,9 +56,9 @@ def render_search_interface():
 
 def render_single_search_tab():
     """Renderiza aba de pesquisa individual"""
-    st.subheader("Pesquisar por Nome ou CPF")
+    st.subheader("Pesquisar por Nome, CPF ou CNPJ")
 
-    # JavaScript para máscara de CPF
+    # JavaScript para máscara de CPF/CNPJ
     st.markdown("""
     <script>
     function formatCPF(value) {
@@ -80,15 +80,48 @@ def render_single_search_tab():
         }
     }
 
+    function formatCNPJ(value) {
+        // Remove tudo que não é dígito
+        value = value.replace(/\\D/g, '');
+
+        // Limita a 14 dígitos
+        value = value.substring(0, 14);
+
+        // Aplica a máscara XX.XXX.XXX/XXXX-XX
+        if (value.length <= 2) {
+            return value;
+        } else if (value.length <= 5) {
+            return value.substring(0, 2) + '.' + value.substring(2);
+        } else if (value.length <= 8) {
+            return value.substring(0, 2) + '.' + value.substring(2, 5) + '.' + value.substring(5);
+        } else if (value.length <= 12) {
+            return value.substring(0, 2) + '.' + value.substring(2, 5) + '.' + value.substring(5, 8) + '/' + value.substring(8);
+        } else {
+            return value.substring(0, 2) + '.' + value.substring(2, 5) + '.' + value.substring(5, 8) + '/' + value.substring(8, 12) + '-' + value.substring(12);
+        }
+    }
+
+    function formatDocument(value) {
+        // Remove tudo que não é dígito
+        var digits = value.replace(/\\D/g, '');
+
+        // Se tem mais de 11 dígitos, é CNPJ
+        if (digits.length > 11) {
+            return formatCNPJ(value);
+        } else {
+            return formatCPF(value);
+        }
+    }
+
     // Aguarda o DOM carregar
     setTimeout(function() {
         const inputs = document.querySelectorAll('input[type="text"]');
         inputs.forEach(function(input) {
-            if (input.placeholder && input.placeholder.includes('CPF')) {
+            if (input.placeholder && (input.placeholder.includes('CPF') || input.placeholder.includes('CNPJ'))) {
                 input.addEventListener('input', function(e) {
                     const cursorPos = e.target.selectionStart;
                     const oldLength = e.target.value.length;
-                    e.target.value = formatCPF(e.target.value);
+                    e.target.value = formatDocument(e.target.value);
                     const newLength = e.target.value.length;
 
                     // Ajusta posição do cursor
@@ -105,8 +138,8 @@ def render_single_search_tab():
 
     with col1:
         search_input = st.text_input(
-            "Nome completo ou CPF:",
-            placeholder="Ex: João Silva ou 123.456.789-10",
+            "Nome completo, CPF ou CNPJ:",
+            placeholder="Ex: João Silva, 123.456.789-10 ou 11.222.333/0001-44",
             key="search_input"
         )
 
@@ -121,18 +154,18 @@ def render_single_search_tab():
 
 def render_bulk_search_tab():
     """Renderiza aba de pesquisa em lote"""
-    st.subheader("Pesquisa em Lote de CPFs via CSV")
+    st.subheader("Pesquisa em Lote de CPFs e CNPJs via CSV")
 
     st.markdown("""
-    Faça upload de um arquivo CSV contendo CPFs para pesquisar múltiplos registros de uma vez.
-    O sistema extrairá automaticamente todos os CPFs do arquivo.
+    Faça upload de um arquivo CSV contendo CPFs e/ou CNPJs para pesquisar múltiplos registros de uma vez.
+    O sistema extrairá automaticamente todos os CPFs e CNPJs do arquivo.
     """)
 
     # Upload de arquivo
     uploaded_file = st.file_uploader(
         "Escolha um arquivo CSV",
         type=['csv'],
-        help="Faça upload de um arquivo CSV contendo CPFs. Tamanho máximo: 10MB"
+        help="Faça upload de um arquivo CSV contendo CPFs e/ou CNPJs. Tamanho máximo: 10MB"
     )
 
     if uploaded_file is not None:
@@ -145,34 +178,48 @@ def render_bulk_search_tab():
 
         # Processar CSV
         with st.spinner("Processando arquivo CSV..."):
-            cpf_list, _ = CSVProcessor.process_csv_file(uploaded_file)
+            cpf_list, cnpj_list, _ = CSVProcessor.process_csv_file(uploaded_file)
 
-        if not cpf_list:
-            st.warning("⚠️ Nenhum CPF válido encontrado no arquivo enviado.")
+        if not cpf_list and not cnpj_list:
+            st.warning("⚠️ Nenhum CPF ou CNPJ válido encontrado no arquivo enviado.")
             return
 
-        # Exibir prévia
-        st.success(f"✅ Encontrados {len(cpf_list)} CPFs únicos no arquivo")
+        # Exibir prévia de CPFs
+        if cpf_list:
+            st.success(f"✅ Encontrados {len(cpf_list)} CPFs únicos no arquivo")
 
-        with st.expander("📋 Prévia dos CPFs extraídos", expanded=False):
-            # Formatar CPFs para exibição
-            formatted_cpfs = [DataFormatter.format_cpf(cpf) for cpf in cpf_list[:50]]
+            with st.expander("📋 Prévia dos CPFs extraídos", expanded=False):
+                formatted_cpfs = [DataFormatter.format_cpf(cpf) for cpf in cpf_list[:50]]
 
-            if len(cpf_list) <= 50:
-                st.write(", ".join(formatted_cpfs))
-            else:
-                st.write(", ".join(formatted_cpfs))
-                st.info(f"... e mais {len(cpf_list) - 50} CPFs")
+                if len(cpf_list) <= 50:
+                    st.write(", ".join(formatted_cpfs))
+                else:
+                    st.write(", ".join(formatted_cpfs))
+                    st.info(f"... e mais {len(cpf_list) - 50} CPFs")
+
+        # Exibir prévia de CNPJs
+        if cnpj_list:
+            st.success(f"✅ Encontrados {len(cnpj_list)} CNPJs únicos no arquivo")
+
+            with st.expander("📋 Prévia dos CNPJs extraídos", expanded=False):
+                formatted_cnpjs = [CNPJValidator.format_cnpj(cnpj) for cnpj in cnpj_list[:50]]
+
+                if len(cnpj_list) <= 50:
+                    st.write(", ".join(formatted_cnpjs))
+                else:
+                    st.write(", ".join(formatted_cnpjs))
+                    st.info(f"... e mais {len(cnpj_list) - 50} CNPJs")
 
         # Botão de pesquisa
+        total_docs = len(cpf_list) + len(cnpj_list)
         col1, col2 = st.columns([1, 3])
 
         with col1:
             if st.button("🔍 Iniciar Pesquisa em Lote", type="primary", use_container_width=True):
-                perform_bulk_search(cpf_list)
+                perform_bulk_search(cpf_list, cnpj_list)
 
         with col2:
-            st.info(f"Isso pesquisará {len(cpf_list)} CPFs. Pode levar alguns minutos.")
+            st.info(f"Isso pesquisará {total_docs} documentos ({len(cpf_list)} CPFs e {len(cnpj_list)} CNPJs). Pode levar alguns minutos.")
 
     # Exibir resultados anteriores de pesquisa em lote, se disponíveis
     if 'bulk_results' in st.session_state and st.session_state.bulk_results:
@@ -187,9 +234,14 @@ def perform_search(search_input: str):
     st.session_state.api = api
 
     with st.spinner("Pesquisando processos..."):
-        if CPFValidator.is_cpf(search_input):
+        if CNPJValidator.is_cnpj(search_input):
+            cnpj = re.sub(r'\D', '', search_input)
+            st.info(f"Pesquisando por CNPJ: {CNPJValidator.format_cnpj(cnpj)}")
+            results = api.search_by_cnpj(cnpj)
+            search_type, display_term = "CNPJ", cnpj
+        elif CPFValidator.is_cpf(search_input):
             cpf = re.sub(r'\D', '', search_input)
-            st.info(f"Pesquisando por CPF: {cpf}")
+            st.info(f"Pesquisando por CPF: {DataFormatter.format_cpf(cpf)}")
             results = api.search_by_cpf(cpf)
             search_type, display_term = "CPF", cpf
         else:
@@ -217,38 +269,55 @@ def perform_search(search_input: str):
             st.success("✅ Pesquisa salva no histórico permanente!")
 
 
-def perform_bulk_search(cpf_list: list):
-    """Realiza pesquisa em lote de CPFs"""
+def perform_bulk_search(cpf_list: list, cnpj_list: list = None):
+    """Realiza pesquisa em lote de CPFs e CNPJs"""
+    if cnpj_list is None:
+        cnpj_list = []
+
     api = st.session_state.get('api') or PredictusAPI()
     st.session_state.api = api
 
     # Criar gerenciador de pesquisa em lote
     bulk_manager = BulkSearchManager(api)
 
+    # Total de documentos a pesquisar
+    total_docs = len(cpf_list) + len(cnpj_list)
+
     # Rastreamento de progresso
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    def update_progress(current: int, total: int, cpf: str):
-        """Atualiza barra de progresso e status"""
-        progress = current / total
+    def update_cpf_progress(current: int, _total: int, cpf: str):
+        """Atualiza barra de progresso para CPFs"""
+        progress = current / total_docs
         progress_bar.progress(progress)
-        status_text.text(f"Pesquisando {current}/{total}: {DataFormatter.format_cpf(cpf)}")
+        status_text.text(f"Pesquisando CPF {current}/{len(cpf_list)}: {DataFormatter.format_cpf(cpf)}")
 
-    # Realizar pesquisa
+    def update_cnpj_progress(current: int, _total: int, cnpj: str):
+        """Atualiza barra de progresso para CNPJs"""
+        progress = (len(cpf_list) + current) / total_docs
+        progress_bar.progress(progress)
+        status_text.text(f"Pesquisando CNPJ {current}/{len(cnpj_list)}: {CNPJValidator.format_cnpj(cnpj)}")
+
+    # Realizar pesquisa de CPFs
     with st.spinner("Realizando pesquisa em lote..."):
-        results = bulk_manager.search_cpf_list(cpf_list, progress_callback=update_progress)
+        if cpf_list:
+            bulk_manager.search_cpf_list(cpf_list, progress_callback=update_cpf_progress)
+
+        # Realizar pesquisa de CNPJs
+        if cnpj_list:
+            bulk_manager.search_cnpj_list(cnpj_list, progress_callback=update_cnpj_progress)
 
     # Limpar indicadores de progresso
     progress_bar.empty()
     status_text.empty()
 
     # Armazenar resultados
-    st.session_state.bulk_results = results
+    st.session_state.bulk_results = bulk_manager.results
 
     # Exibir resumo
     summary = bulk_manager.get_summary()
-    st.success(f"✅ Pesquisa em lote concluída! Pesquisados {summary['total_searched']} CPFs")
+    st.success(f"✅ Pesquisa em lote concluída! Pesquisados {summary['total_searched']} documentos ({summary.get('cpfs_searched', 0)} CPFs e {summary.get('cnpjs_searched', 0)} CNPJs)")
 
     # Recarregar para exibir resultados
     st.rerun()
