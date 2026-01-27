@@ -128,3 +128,10 @@ class PredictusAPI:
             "/predictus-api/processos/judiciais/buscarPorNumeroCNJ",
             {"numeroProcessoUnico": process_number}
         )
+
+    def search_by_cnpj(self, cnpj: str) -> Optional[List[Dict]]:
+        """Search processes by CNPJ"""
+        return self._make_request(
+            "/predictus-api/processos/judiciais/buscarPorCNPJParte",
+            {"cnpj": cnpj}
+        )
