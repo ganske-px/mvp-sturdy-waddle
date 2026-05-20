@@ -2,62 +2,64 @@
 
 Internal background check app for PX Center — operators run judicial process searches against the Predictus API by CPF, CNPJ or name, individually or in batches via CSV upload.
 
-> **Migration note:** this repository was rewritten from a Streamlit + Python MVP to a Supabase + Next.js + Vercel stack. The original Python implementation is preserved under [`legacy-streamlit/`](./legacy-streamlit) for reference and is not deployed.
+> **For Claude Code:** project conventions, invariants and recipes live in [`CLAUDE.md`](./CLAUDE.md). Read that first.
+>
+> **Migration note:** this repository was rewritten from a Streamlit + Python MVP to a Supabase + Next.js + Vercel stack. The original Python implementation is preserved under [`legacy-streamlit/`](./legacy-streamlit) for reference only — never imported by the new app.
 
 ## Stack
 
-- **Frontend:** Next.js 16 (App Router) + React 19 + TypeScript strict
+- **App:** Next.js 16 (App Router) + React 19 + TypeScript strict
 - **UI:** Tailwind 4 + shadcn/ui + Biome
 - **Backend:** Supabase (Postgres 16 + Auth + Edge Functions + Realtime + Vault + pg_cron)
-- **Deploy:** Vercel
-- **Tests:** Vitest (TDD)
+- **Deploy:** Vercel (Next.js) + Supabase (database, auth, edge functions)
+- **Tests:** Vitest with TDD discipline — **157 passing** across 13 suites
 
-## Scope (paridade pura)
+## Scope
+
+What it does:
 
 - Single search by CPF, CNPJ or name (Predictus)
-- Bulk search by CSV upload, capped at **250 documents per job**
-- Per-operator search history (private, RLS)
-- Shared Predictus cache with **30-day TTL** (encrypted at rest)
-- Append-only audit log retained for **30 days**, purged daily by `pg_cron`
-- Magic-link auth was rejected; **email + password only**, with signup disabled
+- Bulk search from CSV upload, capped at **250 documents per job**, processed asynchronously by a Supabase Edge Function
+- Per-operator search history and audit log (private via RLS)
+- Shared, encrypted Predictus result cache with 30-day TTL
+- Email + password auth with manual operator allowlist
 
-## What is intentionally out of scope
+What it does **not** do:
 
-- Gemini-powered risk assessment (mentioned in the original README but never shipped)
+- Gemini-powered risk scoring (referenced in the legacy README but never shipped)
 - PostHog instrumentation
-- Multi-tenant organisations
+- Multi-tenant organisations or per-customer billing
 - Cancellation of in-flight bulk jobs
+
+## Routes
+
+| Path | Type | Purpose |
+| --- | --- | --- |
+| `/` | static | Nav cards (Search / Bulk / History) + audit link + sign out |
+| `/login` | static | Email + password sign-in |
+| `/access-denied` | static | Authenticated but not on the operator allowlist |
+| `/search` | static (client) | Single document lookup with cache-or-fresh badge |
+| `/bulk` | static (client) | CSV paste/upload to create a bulk job |
+| `/bulk/[jobId]` | dynamic | Realtime progress page (Supabase channels) |
+| `/history` | dynamic | Operator's last 100 searches |
+| `/audit` | dynamic | Operator's last 200 audit events |
+| `proxy.ts` | edge | Session refresh + allowlist enforcement |
 
 ## Auth model
 
-Operators are created **manually** by the admin via Supabase Studio (Auth → Add user). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `proxy.ts` (the Next.js 16 file convention, previously `middleware.ts`) enforces that any authenticated user without a `public.users` row is redirected to `/access-denied`. This means revoking access = deleting the `public.users` row (keeping the auth row dormant).
+Operators are created manually by the admin via Supabase Studio (Auth → Add user). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `proxy.ts` redirects any authenticated user without a `public.users` row to `/access-denied`. Revoke access by deleting the `public.users` row — the `auth.users` row can stay dormant.
 
 Password requirements: 12+ chars, mixed case, digits, symbols.
 
 ## LGPD posture
 
-- CPF, CNPJ and personal names **never** appear in plaintext in `public.searches` or `public.audit_log`. Both tables store a SHA-256 `document_hash` and a partially-masked `term_preview` (e.g. `123.***.***-10`).
-- The full Predictus payload is cached in `public.predictus_cache.encrypted_payload`, encrypted with `pgp_sym_encrypt` using a key stored in Supabase Vault under `predictus_cache_key`.
-- `pg_cron` runs daily at 03:00 UTC to purge `audit_log`, expired `predictus_cache` rows, and completed `bulk_jobs` older than 30 days.
-- Audit log captures `user_id`, `action`, `document_hash`, `ip`, `user_agent` and `metadata` (jsonb). Operators can read their own audit history; writes happen only via the service-role key.
-
-## Project layout
-
-```
-app/                        Next.js App Router pages
-components/ui/              shadcn/ui primitives
-lib/
-├── validators/{cpf,cnpj}   Check-digit validation, normalize, format, mask
-├── csv/parser              CSV → de-duped CPF/CNPJ lists with 250-row cap
-├── predictus/              Predictus API client (auth refresh + retries)
-└── supabase/               Browser/server/admin clients + proxy session refresh
-supabase/
-├── migrations/             SQL schema, RLS, crypto helpers, pg_cron jobs
-└── functions/
-    └── process-bulk-job/   Edge Function for async bulk processing
-tests/                      Vitest suites
-legacy-streamlit/           Original Python MVP (not deployed)
-```
+- CPF, CNPJ and personal names **never** appear in cleartext in `public.searches` or `public.audit_log`. Both store a SHA-256 `document_hash` and a masked `term_preview` (e.g. `123.***.***-10`).
+- `predictus_cache.encrypted_payload` and `bulk_job_items.document_encrypted` are `bytea`, encrypted via `pgp_sym_encrypt` with a key stored in Supabase Vault (`predictus_cache_key`).
+- Plaintext CPF/CNPJ exists only on the call stack of `processBulkItem` during the Predictus call — never persisted.
+- `pg_cron` runs daily at 03:00 UTC:
+  - `audit_log` and expired `predictus_cache` rows purged after **30 days**
+  - Completed/failed `bulk_jobs` purged after **7 days** (they hold encrypted documents)
+- Audit log captures `user_id`, `action`, `document_hash`, `ip`, `user_agent` and `metadata` (jsonb). Operators read their own audit history; writes happen only via the service-role key.
 
 ## Local setup
 
@@ -69,13 +71,13 @@ pnpm install
 
 ### 2. Boot Supabase locally
 
-You need Docker running.
+Requires Docker.
 
 ```bash
 pnpm exec supabase start
 ```
 
-The first run downloads container images and applies the migrations under `supabase/migrations/`. The output prints `API URL`, `anon key` and `service_role key` — copy those into `.env.local`:
+The first run downloads container images and applies the migrations under `supabase/migrations/`. It prints `API URL`, `anon key` and `service_role key` — copy those into `.env.local`:
 
 ```bash
 cp .env.local.example .env.local
@@ -84,22 +86,20 @@ cp .env.local.example .env.local
 
 ### 3. Initialize the Vault key for encrypted storage
 
-After `supabase start`, run the bootstrap script once per environment:
-
 ```bash
 psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" \
   -f scripts/bootstrap-vault.sql
 ```
 
-This is idempotent — re-runs are no-ops. Without the secret, the `encrypt_payload` / `decrypt_payload` Vault RPCs throw a clear error, and the search/bulk paths surface that to the operator.
+Idempotent. Without the secret, `encrypt_payload` / `decrypt_payload` throw a clear error and the search/bulk paths surface it.
 
 ### 4. Create an operator
 
-In Supabase Studio → Authentication → Add user. Set email + a password meeting the requirements. The trigger mirrors the user into `public.users` automatically.
+Supabase Studio → Authentication → Add user. The trigger mirrors the user into `public.users` automatically.
 
 ### 5. Configure Predictus credentials
 
-Fill `PREDICTUS_USERNAME` and `PREDICTUS_PASSWORD` in `.env.local`. These are shared between all operators.
+Fill `PREDICTUS_USERNAME` and `PREDICTUS_PASSWORD` in `.env.local`. These credentials are shared across all operators (one upstream account).
 
 ### 6. Run the app
 
@@ -113,96 +113,83 @@ Open <http://localhost:3000>.
 
 | Script | Purpose |
 | --- | --- |
-| `pnpm dev` | Run Next.js dev server |
+| `pnpm dev` | Next.js dev server |
 | `pnpm build` | Production build |
 | `pnpm typecheck` | TypeScript strict check (no emit) |
-| `pnpm test` | Run all Vitest suites once |
+| `pnpm test` | Vitest run, once |
 | `pnpm test:watch` | Vitest watch mode |
 | `pnpm test:coverage` | Coverage report under `coverage/` |
 | `pnpm lint` | Biome check |
 | `pnpm lint:fix` | Biome check + autofix |
 | `pnpm format` | Biome format |
 
+## Project layout
+
+```
+app/                Next.js App Router pages + Server Actions (thin wiring)
+components/ui/      shadcn/ui primitives
+lib/                Pure-ish modules covered by Vitest — the logic lives here
+  ├── validators/   CPF, CNPJ, name (check digits, masking)
+  ├── csv/          CSV parser with 250-doc cap
+  ├── hash.ts       SHA-256 document hashing with type prefix
+  ├── audit.ts      audit_log writer + request context extractor
+  ├── crypto/       Vault encrypt/decrypt wrappers
+  ├── predictus/    HTTP client, token store, cache, item-processor
+  ├── bulk/         Job store + orchestration loop
+  └── supabase/     Browser/server/admin clients + proxy session refresh
+proxy.ts            Next.js 16 file convention (the artifact formerly known as middleware.ts)
+supabase/
+  ├── migrations/   SQL — schema, RLS, crypto helpers, pg_cron retention
+  └── functions/
+      └── process-bulk-job/  Edge Function (Deno) — reuses lib/ via relative imports
+scripts/
+  └── bootstrap-vault.sql    Idempotent Vault key creation
+legacy-streamlit/             Original Python MVP, kept for reference only
+```
+
 ## Deployment
 
-- **Hosting:** Vercel. Connect this repo, set the same env vars from `.env.local` in Vercel Project Settings.
-- **Database:** managed Supabase project. Run `pnpm exec supabase db push` against the linked project to apply migrations.
-- **Edge Function:** `pnpm exec supabase functions deploy process-bulk-job` after the function is implemented.
-- **Vercel function timeout:** the bulk-job Server Action only enqueues; the heavy lifting runs in the Supabase Edge Function (no Vercel timeout pressure).
+- **Hosting:** Vercel. Connect this repo, set the env vars from `.env.local` in Vercel Project Settings.
+- **Database:** managed Supabase project. `pnpm exec supabase db push` applies pending migrations.
+- **Vault key:** run `scripts/bootstrap-vault.sql` once per environment (Studio → SQL editor works too).
+- **Edge Function:** `pnpm exec supabase functions deploy process-bulk-job`.
+- **Vercel function timeout:** the bulk-job Server Action only enqueues; the heavy lifting runs in the Supabase Edge Function via `EdgeRuntime.waitUntil`, so the Vercel route returns 202 immediately.
 
 ## Limits and assumptions
 
 - Bulk CSV ≤ 250 documents per job (enforced server-side in `parseCsv` and via a CHECK constraint on `bulk_jobs.total_items`).
 - Predictus rate limit assumed at **1000 requests/hour**, so the Edge Function paces requests at **1 every 3.6 s**.
-- Cache TTL = 30 days. Audit retention = 30 days. Completed bulk jobs purged after **7 days**.
 - The Predictus token persists in `public.predictus_token` (singleton row), so it survives Edge Function cold starts.
-
-### Bulk item document storage
-
-`bulk_job_items.document_encrypted` holds the CPF/CNPJ as `bytea`, encrypted with the same Vault key (`predictus_cache_key`) used by `predictus_cache.encrypted_payload`. The Server Action encrypts via `encryptText` before insert; the Edge Function decrypts inline (`decryptText`) immediately before each Predictus call. Combined with:
-
-- **7-day purge** of completed/failed jobs via `purge-old-bulk-jobs-daily`
-- **Service-role only writes** (RLS denies INSERT/UPDATE for authenticated users)
-- **Vault-backed key** rotatable independently from application secrets
-
-…the cleartext window is reduced to the Edge Function call stack.
+- Cache TTL = 30 days. Audit retention = 30 days. Completed bulk jobs purged after 7 days.
 
 ## Status
 
-What is implemented and tested in this commit:
+Everything in the scope above is implemented and covered. Test counts at the time of writing:
 
-- [x] Branch `feature/nextjs-rewrite` off `main`, legacy Python preserved under `legacy-streamlit/`
-- [x] Next.js + TS strict + Tailwind 4 + shadcn/ui + Biome + Vitest scaffold
-- [x] Supabase schema with RLS, crypto helpers and pg_cron retention (migrations 1–4)
-- [x] CPF/CNPJ validators with check digits — 40 tests
-- [x] CSV parser with 250-doc cap and CNPJ-before-CPF disambiguation — 14 tests
-- [x] Predictus client with token refresh and 3-retry backoff — 15 tests
-- [x] Supabase browser/server/admin clients + proxy allowlist (Next.js 16 `proxy.ts`)
-- [x] `lib/hash.ts` — SHA-256 document hashing with cross-type separation — 16 tests
-- [x] `lib/audit.ts` — audit_log writer + request context extractor — 10 tests
-- [x] `lib/validators/name.ts` — name masking for the UI — 5 tests
-- [x] `/login` page + `signIn` Server Action + `/access-denied`
-- [x] `/search` page + `searchByDoc` Server Action (audit-before-Predictus)
-- [x] `/history` page (operator's last 100 searches via RLS)
-- [x] Home `/` with navigation cards (Search / History)
-- [x] `PredictusClient` exposes `initialToken` + `onTokenChange` hooks — 19 tests
-- [x] `SupabaseTokenStore` persists access token in `public.predictus_token` — 7 tests
-- [x] `createServerPredictusClient()` wires the store into the client so the
-      token survives cold starts
-- [x] `lib/predictus/cache.ts` round-trips encrypted payloads via the
-      `encrypt_payload`/`decrypt_payload` Vault RPCs — 9 tests
-- [x] `searchByDoc` is cache-first: cache hit returns immediately, miss
-      hits Predictus then UPSERTs the cache. UI shows a "Cached — fetched X
-      ago" or "Fresh" badge.
-- [x] `lib/bulk/job-store.ts` — CRUD over `bulk_jobs`/`bulk_job_items` —
-      15 tests
-- [x] `lib/bulk/processor.ts` — orchestration loop with per-item error
-      isolation, rate-limited sleep between items, completion logic —
-      8 tests
-- [x] `lib/bulk/item-processor.ts` — cache + Predictus + audit per item —
-      10 tests
-- [x] `/bulk` upload UI + `createBulkJobAction` Server Action that parses
-      the CSV, persists job+items, and triggers the Edge Function
-- [x] `/bulk/[jobId]` page subscribed to Realtime updates on `bulk_jobs`
-      and `bulk_job_items` — progress bar + per-item status table
-- [x] `supabase/functions/process-bulk-job/` Edge Function (Deno) that
-      reuses the TS modules under Node — same tested code path
-- [x] `signOut` Server Action + `<SignOutButton>` on the home (audit log of logout)
-- [x] `/audit` page — operator reads their own `audit_log` via RLS,
-      with action labels, masked hashes and per-event metadata
-- [x] `scripts/bootstrap-vault.sql` — idempotent script that creates
-      the `predictus_cache_key` Vault secret
-- [x] `lib/crypto/vault.ts` — `encryptText`/`decryptText` extracted from
-      `lib/predictus/cache.ts` for reuse (6 tests). Cache refactored
-      to use it.
-- [x] `bulk_job_items.document_value` (plaintext) replaced by
-      `document_encrypted bytea`. `createBulkJob` now accepts an
-      injected `encryptDocument` and the Edge Function decrypts via
-      `decryptText` immediately before each Predictus call. The
-      plaintext CPF/CNPJ never persists past the in-memory stack of
-      `processBulkItem`.
+| Module | Tests |
+| --- | --- |
+| `lib/validators/cpf` | 20 |
+| `lib/validators/cnpj` | 20 |
+| `lib/validators/name` | 5 |
+| `lib/csv/parser` | 14 |
+| `lib/hash` | 16 |
+| `lib/audit` | 10 |
+| `lib/crypto/vault` | 6 |
+| `lib/predictus/client` | 19 |
+| `lib/predictus/token-store` | 7 |
+| `lib/predictus/cache` | 9 |
+| `lib/bulk/job-store` | 16 |
+| `lib/bulk/processor` | 8 |
+| `lib/bulk/item-processor` | 10 |
+| **Total** | **157** |
 
-What is **not** implemented yet:
+The `app/**` and `supabase/functions/**` layers are exercised by `pnpm build` (Next.js compiler) and the test suites of the libraries they wire together.
 
-_(Nothing critical for the scoped MVP. Future candidates listed under
-"Known limitations" for visibility.)_
+## Contributing
+
+Read [`CLAUDE.md`](./CLAUDE.md) before editing. Highlights:
+
+- TDD is the default in `lib/**`.
+- Keep CPF/CNPJ out of any persisted artifact unless it's `bulk_job_items.document_encrypted` (encrypted) or hashed via `hashDocument`.
+- Use `createServerPredictusClient()` — never `new PredictusClient(...)` directly.
+- Run `pnpm typecheck && pnpm test && pnpm lint` before committing.
