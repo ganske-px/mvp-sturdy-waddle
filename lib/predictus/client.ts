@@ -1,8 +1,4 @@
-import {
-  type PredictusClientConfig,
-  PredictusError,
-  type PredictusSearchResult,
-} from './types';
+import { type PredictusClientConfig, PredictusError, type PredictusSearchResult } from './types';
 
 const AUTH_PATH = '/auth';
 const ENDPOINTS = {
@@ -50,11 +46,7 @@ export class PredictusClient {
 
     if (!response.ok) {
       const body = await safeReadJson(response);
-      throw new PredictusError(
-        `Authentication failed (${response.status})`,
-        response.status,
-        body,
-      );
+      throw new PredictusError(`Authentication failed (${response.status})`, response.status, body);
     }
 
     const body = (await safeReadJson(response)) as { accessToken?: unknown } | null;
@@ -84,10 +76,7 @@ export class PredictusClient {
     return this.authenticate();
   }
 
-  private async request(
-    path: string,
-    payload: SearchPayload,
-  ): Promise<PredictusSearchResult> {
+  private async request(path: string, payload: SearchPayload): Promise<PredictusSearchResult> {
     const url = `${this.baseUrl}${path}`;
     let attempt = 0;
     let reauthenticated = false;
@@ -154,11 +143,7 @@ export class PredictusClient {
 
       // 4xx (non-401) — non-retryable.
       const body = await safeReadJson(response);
-      throw new PredictusError(
-        `Client error ${response.status}`,
-        response.status,
-        body,
-      );
+      throw new PredictusError(`Client error ${response.status}`, response.status, body);
     }
   }
 

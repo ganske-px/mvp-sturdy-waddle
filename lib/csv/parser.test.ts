@@ -35,12 +35,7 @@ describe('parseCsv — happy paths', () => {
   });
 
   it('deduplicates repeated documents', () => {
-    const csv = [
-      'cpf',
-      '111.444.777-35',
-      '111.444.777-35',
-      '11144477735',
-    ].join('\n');
+    const csv = ['cpf', '111.444.777-35', '111.444.777-35', '11144477735'].join('\n');
     const result = parseCsv(csv);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -97,10 +92,7 @@ describe('parseCsv — validation', () => {
 
 describe('parseCsv — limits', () => {
   it('rejects when total documents exceed maxDocuments (default 250)', () => {
-    const validCpfs = [
-      '111.444.777-35',
-      '529.982.247-25',
-    ];
+    const validCpfs = ['111.444.777-35', '529.982.247-25'];
     const lines = ['cpf'];
     // Push 251 distinct valid CPFs by using digit suffixes — we cheat
     // by repeating the same 2 valid CPFs in different formats.

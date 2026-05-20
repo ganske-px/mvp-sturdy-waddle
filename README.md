@@ -30,7 +30,7 @@ Internal background check app for PX Center — operators run judicial process s
 
 ## Auth model
 
-Operators are created **manually** by the admin via Supabase Studio (Auth → Add user). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `middleware.ts` enforces that any authenticated user without a `public.users` row is redirected to `/access-denied`. This means revoking access = deleting the `public.users` row (keeping the auth row dormant).
+Operators are created **manually** by the admin via Supabase Studio (Auth → Add user). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `proxy.ts` (the Next.js 16 file convention, previously `middleware.ts`) enforces that any authenticated user without a `public.users` row is redirected to `/access-denied`. This means revoking access = deleting the `public.users` row (keeping the auth row dormant).
 
 Password requirements: 12+ chars, mixed case, digits, symbols.
 
@@ -50,7 +50,7 @@ lib/
 ├── validators/{cpf,cnpj}   Check-digit validation, normalize, format, mask
 ├── csv/parser              CSV → de-duped CPF/CNPJ lists with 250-row cap
 ├── predictus/              Predictus API client (auth refresh + retries)
-└── supabase/               Browser/server/admin clients + middleware
+└── supabase/               Browser/server/admin clients + proxy session refresh
 supabase/
 ├── migrations/             SQL schema, RLS, crypto helpers, pg_cron jobs
 └── functions/
@@ -150,7 +150,7 @@ What is implemented and tested in this commit:
 - [x] CPF/CNPJ validators with check digits — 40 tests
 - [x] CSV parser with 250-doc cap and CNPJ-before-CPF disambiguation — 14 tests
 - [x] Predictus client with token refresh and 3-retry backoff — 15 tests
-- [x] Supabase browser/server/admin clients + middleware allowlist
+- [x] Supabase browser/server/admin clients + proxy allowlist (Next.js 16 `proxy.ts`)
 
 What is **not** implemented yet (intentionally — next iteration):
 

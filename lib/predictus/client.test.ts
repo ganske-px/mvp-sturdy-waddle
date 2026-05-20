@@ -4,9 +4,7 @@ import { PredictusError } from './types';
 
 type FetchCall = { url: string; init: RequestInit };
 
-function buildFetch(
-  responses: Array<Response | (() => Response | Promise<Response>) | Error>,
-) {
+function buildFetch(responses: Array<Response | (() => Response | Promise<Response>) | Error>) {
   const calls: FetchCall[] = [];
   let i = 0;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -98,10 +96,7 @@ describe('PredictusClient.searchByCpf — happy paths', () => {
   });
 
   it('treats 204 No Content as empty results (nada consta)', async () => {
-    const { fetchMock } = buildFetch([
-      jsonResponse({ accessToken: 'tok-1' }),
-      emptyResponse(204),
-    ]);
+    const { fetchMock } = buildFetch([jsonResponse({ accessToken: 'tok-1' }), emptyResponse(204)]);
     const { client } = buildClient({ fetch: fetchMock });
     expect(await client.searchByCpf('11144477735')).toEqual([]);
   });

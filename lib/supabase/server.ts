@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import type { Database } from './types';
 import { supabaseEnv } from './env';
+import type { Database } from './types';
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -17,7 +17,7 @@ export async function createClient() {
           }
         } catch {
           // Called from a Server Component — read-only cookies. Safe to ignore
-          // when middleware is refreshing the session.
+          // when the proxy is refreshing the session.
         }
       },
     },
