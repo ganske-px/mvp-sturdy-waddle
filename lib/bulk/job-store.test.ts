@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   type BulkItemInput,
   createBulkJob,
@@ -24,7 +24,7 @@ type BulkItemRow = {
   id: string;
   job_id: string;
   document_hash: string;
-  document_value: string;
+  document_encrypted: string;
   document_type: 'cpf' | 'cnpj';
   document_preview: string;
   status: 'pending' | 'processing' | 'found' | 'clean' | 'error';
@@ -42,6 +42,7 @@ type FakeState = {
 function buildFake() {
   const state: FakeState = { jobs: [], items: [], nextId: 1 };
   const nextId = () => `id-${state.nextId++}`;
+  const encryptDocument = vi.fn(async (raw: string) => `enc(${raw})`);
 
   const buildItemQuery = (filtered: BulkItemRow[]) => {
     const query = {
@@ -120,7 +121,7 @@ function buildFake() {
                 id: nextId(),
                 job_id: r.job_id,
                 document_hash: r.document_hash,
-                document_value: r.document_value,
+                document_encrypted: r.document_encrypted,
                 document_type: r.document_type,
                 document_preview: r.document_preview,
                 status: 'pending',
@@ -149,19 +150,19 @@ function buildFake() {
       throw new Error(`unexpected table: ${table}`);
     },
   };
-  return { client, state };
+  return { client, state, encryptDocument };
 }
 
 const SAMPLE_ITEMS: BulkItemInput[] = [
   {
     documentHash: 'h1',
-    documentValue: '11144477735',
+    documentRaw: '11144477735',
     documentType: 'cpf',
     documentPreview: '111.***.***-35',
   },
   {
     documentHash: 'h2',
-    documentValue: '11222333000181',
+    documentRaw: '11222333000181',
     documentType: 'cnpj',
     documentPreview: '11.***.***/****-81',
   },
@@ -169,8 +170,13 @@ const SAMPLE_ITEMS: BulkItemInput[] = [
 
 describe('createBulkJob', () => {
   it('inserts a bulk_jobs row with status=pending and total_items=N', async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
 
     expect(jobId).toBeTruthy();
     expect(state.jobs).toHaveLength(1);
@@ -182,8 +188,13 @@ describe('createBulkJob', () => {
   });
 
   it('inserts one bulk_job_items row per input item, all pending', async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
 
     expect(state.items).toHaveLength(2);
     expect(state.items.every((i) => i.job_id === jobId)).toBe(true);
@@ -191,27 +202,55 @@ describe('createBulkJob', () => {
     expect(state.items.map((i) => i.document_hash).sort()).toEqual(['h1', 'h2']);
   });
 
+  it('encrypts the raw document before persistence', async () => {
+    const { client, state, encryptDocument } = buildFake();
+    await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
+
+    expect(encryptDocument).toHaveBeenCalledTimes(2);
+    expect(encryptDocument).toHaveBeenCalledWith('11144477735');
+    expect(encryptDocument).toHaveBeenCalledWith('11222333000181');
+    // Persisted items should hold the ciphertext returned by the stub,
+    // never the raw input.
+    for (const item of state.items) {
+      expect(item.document_encrypted.startsWith('enc(')).toBe(true);
+    }
+  });
+
   it('rejects when items is empty', async () => {
-    const { client } = buildFake();
-    await expect(createBulkJob(client as never, 'user-1', [])).rejects.toThrow(/at least 1 item/);
+    const { client, encryptDocument } = buildFake();
+    await expect(
+      createBulkJob({ client: client as never, userId: 'user-1', items: [], encryptDocument }),
+    ).rejects.toThrow(/at least 1 item/);
   });
 
   it('rejects when items exceeds the 250 cap', async () => {
-    const { client } = buildFake();
+    const { client, encryptDocument } = buildFake();
     const tooMany: BulkItemInput[] = Array.from({ length: 251 }, (_, i) => ({
       documentHash: `h-${i}`,
-      documentValue: `${i.toString().padStart(11, '0')}`,
+      documentRaw: `${i.toString().padStart(11, '0')}`,
       documentType: 'cpf',
       documentPreview: `***-${i.toString().padStart(2, '0')}`,
     }));
-    await expect(createBulkJob(client as never, 'user-1', tooMany)).rejects.toThrow(/250/);
+    await expect(
+      createBulkJob({ client: client as never, userId: 'user-1', items: tooMany, encryptDocument }),
+    ).rejects.toThrow(/250/);
   });
 });
 
 describe('setJobStatus', () => {
   it("transitions to 'running' and stamps started_at", async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     await setJobStatus(client as never, jobId, 'running');
     const job = state.jobs[0] as BulkJobRow;
     expect(job.status).toBe('running');
@@ -219,8 +258,13 @@ describe('setJobStatus', () => {
   });
 
   it("transitions to 'completed' and stamps finished_at", async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     await setJobStatus(client as never, jobId, 'completed');
     const job = state.jobs[0] as BulkJobRow;
     expect(job.status).toBe('completed');
@@ -228,8 +272,13 @@ describe('setJobStatus', () => {
   });
 
   it("transitions to 'failed' with an error message", async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     await setJobStatus(client as never, jobId, 'failed', { errorMessage: 'predictus down' });
     const job = state.jobs[0] as BulkJobRow;
     expect(job.status).toBe('failed');
@@ -240,10 +289,14 @@ describe('setJobStatus', () => {
 
 describe('getPendingItems', () => {
   it('returns only items in pending status, up to the limit', async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
 
-    // Simulate one item already processed.
     (state.items[0] as BulkItemRow).status = 'found';
 
     const pending = await getPendingItems(client as never, jobId, 10);
@@ -252,14 +305,19 @@ describe('getPendingItems', () => {
   });
 
   it('respects the limit argument', async () => {
-    const { client } = buildFake();
+    const { client, encryptDocument } = buildFake();
     const many: BulkItemInput[] = Array.from({ length: 5 }, (_, i) => ({
       documentHash: `h-${i}`,
-      documentValue: `${i.toString().padStart(11, '0')}`,
+      documentRaw: `${i.toString().padStart(11, '0')}`,
       documentType: 'cpf',
       documentPreview: `mask-${i}`,
     }));
-    const { jobId } = await createBulkJob(client as never, 'user-1', many);
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: many,
+      encryptDocument,
+    });
     const slice = await getPendingItems(client as never, jobId, 3);
     expect(slice).toHaveLength(3);
   });
@@ -267,8 +325,13 @@ describe('getPendingItems', () => {
 
 describe('recordItemResult', () => {
   it("flips an item to 'found' with the result count", async () => {
-    const { client, state } = buildFake();
-    await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     const item = state.items[0] as BulkItemRow;
     await recordItemResult(client as never, item.id, { kind: 'found', resultCount: 4 });
     expect(item.status).toBe('found');
@@ -277,16 +340,26 @@ describe('recordItemResult', () => {
   });
 
   it("flips an item to 'clean' with result_count=0", async () => {
-    const { client, state } = buildFake();
-    await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     const item = state.items[0] as BulkItemRow;
     await recordItemResult(client as never, item.id, { kind: 'clean', resultCount: 0 });
     expect(item.status).toBe('clean');
   });
 
   it("flips an item to 'error' and stamps the message", async () => {
-    const { client, state } = buildFake();
-    await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     const item = state.items[0] as BulkItemRow;
     await recordItemResult(client as never, item.id, { kind: 'error', message: 'timeout' });
     expect(item.status).toBe('error');
@@ -296,8 +369,13 @@ describe('recordItemResult', () => {
 
 describe('refreshJobCounters', () => {
   it('counts processed items and reports completed=true when all are done', async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
 
     (state.items[0] as BulkItemRow).status = 'found';
     (state.items[0] as BulkItemRow).result_count = 2;
@@ -315,8 +393,13 @@ describe('refreshJobCounters', () => {
   });
 
   it('reports completed=false when at least one item is still pending', async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
     (state.items[0] as BulkItemRow).status = 'found';
 
     const summary = await refreshJobCounters(client as never, jobId);
@@ -325,8 +408,13 @@ describe('refreshJobCounters', () => {
   });
 
   it('counts errors separately from successful items', async () => {
-    const { client, state } = buildFake();
-    const { jobId } = await createBulkJob(client as never, 'user-1', SAMPLE_ITEMS);
+    const { client, state, encryptDocument } = buildFake();
+    const { jobId } = await createBulkJob({
+      client: client as never,
+      userId: 'user-1',
+      items: SAMPLE_ITEMS,
+      encryptDocument,
+    });
 
     (state.items[0] as BulkItemRow).status = 'error';
     (state.items[0] as BulkItemRow).error_message = 'boom';

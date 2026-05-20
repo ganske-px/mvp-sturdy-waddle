@@ -1,3 +1,4 @@
+import { decryptText, encryptText } from '@/lib/crypto/vault';
 import type { Database } from '@/lib/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PredictusProcess, PredictusSearchType } from './types';
@@ -39,20 +40,9 @@ export async function getCachedResults(
   }
   if (!data) return null;
 
-  const { data: decrypted, error: decryptError } = await client.rpc(
-    'decrypt_payload' as never,
-    {
-      ciphertext: data.encrypted_payload,
-    } as never,
-  );
-  if (decryptError) {
-    throw new Error(`cache.decrypt failed: ${decryptError.message}`);
-  }
-  if (typeof decrypted !== 'string') {
-    throw new Error('cache.decrypt returned a non-string payload');
-  }
+  const plaintext = await decryptText(client, data.encrypted_payload);
   return {
-    results: JSON.parse(decrypted) as PredictusProcess[],
+    results: JSON.parse(plaintext) as PredictusProcess[],
     fetchedAt: data.fetched_at,
   };
 }
@@ -68,18 +58,7 @@ export async function setCachedResults(
   searchType: PredictusSearchType,
   results: PredictusProcess[],
 ): Promise<void> {
-  const { data: encrypted, error: encryptError } = await client.rpc(
-    'encrypt_payload' as never,
-    {
-      plaintext: JSON.stringify(results),
-    } as never,
-  );
-  if (encryptError) {
-    throw new Error(`cache.encrypt failed: ${encryptError.message}`);
-  }
-  if (typeof encrypted !== 'string') {
-    throw new Error('cache.encrypt returned a non-string ciphertext');
-  }
+  const ciphertext = await encryptText(client, JSON.stringify(results));
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -87,7 +66,7 @@ export async function setCachedResults(
   const { error } = await client.from('predictus_cache').upsert({
     document_hash: documentHash,
     search_type: searchType,
-    encrypted_payload: encrypted,
+    encrypted_payload: ciphertext,
     result_count: results.length,
     fetched_at: now.toISOString(),
     expires_at: expiresAt.toISOString(),

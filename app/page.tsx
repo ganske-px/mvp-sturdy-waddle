@@ -1,3 +1,4 @@
+import { SignOutButton } from '@/components/sign-out-button';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
@@ -5,11 +6,14 @@ import Link from 'next/link';
 export default function HomePage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-8 px-6 py-24">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">PX Process Check</h1>
-        <p className="mt-2 text-muted-foreground">
-          Background check via Predictus — internal PX Center tool.
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">PX Process Check</h1>
+          <p className="mt-2 text-muted-foreground">
+            Background check via Predictus — internal PX Center tool.
+          </p>
+        </div>
+        <SignOutButton />
       </header>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -54,6 +58,12 @@ export default function HomePage() {
             </Link>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="flex justify-center">
+        <Link href="/audit" className={buttonVariants({ variant: 'link' })}>
+          View audit log
+        </Link>
       </div>
     </main>
   );

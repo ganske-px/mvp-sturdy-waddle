@@ -2,6 +2,7 @@
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { type BulkItemInput, createBulkJob } from '@/lib/bulk/job-store';
+import { encryptText } from '@/lib/crypto/vault';
 import { parseCsv } from '@/lib/csv/parser';
 import { hashDocument } from '@/lib/hash';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -35,7 +36,7 @@ export async function createBulkJobAction(
     ...parsed.cpfs.map(
       (cpf): BulkItemInput => ({
         documentType: 'cpf',
-        documentValue: cpf,
+        documentRaw: cpf,
         documentHash: hashDocument('cpf', cpf),
         documentPreview: maskCpf(formatCpf(cpf)),
       }),
@@ -43,7 +44,7 @@ export async function createBulkJobAction(
     ...parsed.cnpjs.map(
       (cnpj): BulkItemInput => ({
         documentType: 'cnpj',
-        documentValue: cnpj,
+        documentRaw: cnpj,
         documentHash: hashDocument('cnpj', cnpj),
         documentPreview: maskCnpj(formatCnpj(cnpj)),
       }),
@@ -53,7 +54,12 @@ export async function createBulkJobAction(
   const admin = createAdminClient();
   let jobId: string;
   try {
-    const result = await createBulkJob(admin, user.id, items);
+    const result = await createBulkJob({
+      client: admin,
+      userId: user.id,
+      items,
+      encryptDocument: (raw) => encryptText(admin, raw),
+    });
     jobId = result.jobId;
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to create bulk job.';

@@ -29,6 +29,11 @@ export type ItemProcessorDeps = {
     searchType: PredictusSearchType,
     results: PredictusProcess[],
   ) => Promise<void>;
+  /**
+   * Decrypts `bulk_job_items.document_encrypted` so the raw CPF/CNPJ can be
+   * passed to Predictus. Plaintext lives only on the stack of this function.
+   */
+  decryptDocument: (ciphertext: string) => Promise<string>;
   userId: string;
   ip?: string;
   userAgent?: string;
@@ -75,13 +80,14 @@ export async function processBulkItem(
       : { kind: 'clean', resultCount: 0 };
   }
 
-  // Cache miss — hit Predictus with the raw document value.
+  // Cache miss — decrypt the stored document, then hit Predictus.
   let results: PredictusProcess[];
   try {
+    const documentRaw = await deps.decryptDocument(item.document_encrypted);
     results =
       item.document_type === 'cpf'
-        ? await deps.predictus.searchByCpf(item.document_value)
-        : await deps.predictus.searchByCnpj(item.document_value);
+        ? await deps.predictus.searchByCpf(documentRaw)
+        : await deps.predictus.searchByCnpj(documentRaw);
   } catch (e) {
     return {
       kind: 'error',

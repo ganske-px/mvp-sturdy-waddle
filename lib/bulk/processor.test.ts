@@ -7,7 +7,7 @@ function makeItem(overrides: Partial<BulkItemRow>): BulkItemRow {
     id: 'item-1',
     job_id: 'job-1',
     document_hash: 'h1',
-    document_value: '11144477735',
+    document_encrypted: 'enc(11144477735)',
     document_type: 'cpf',
     document_preview: '***',
     status: 'pending',

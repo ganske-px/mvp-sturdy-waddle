@@ -82,19 +82,16 @@ cp .env.local.example .env.local
 # fill in the printed values
 ```
 
-### 3. Initialize the Vault key for encrypted cache
+### 3. Initialize the Vault key for encrypted storage
 
-After `supabase start`, open `pnpm exec supabase studio` → SQL editor and run:
+After `supabase start`, run the bootstrap script once per environment:
 
-```sql
-select vault.create_secret(
-  encode(gen_random_bytes(32), 'base64'),
-  'predictus_cache_key',
-  'Encryption key for predictus_cache.encrypted_payload'
-);
+```bash
+psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" \
+  -f scripts/bootstrap-vault.sql
 ```
 
-Until this secret exists, calls to `encrypt_payload` / `decrypt_payload` will fail with a clear error.
+This is idempotent — re-runs are no-ops. Without the secret, the `encrypt_payload` / `decrypt_payload` Vault RPCs throw a clear error, and the search/bulk paths surface that to the operator.
 
 ### 4. Create an operator
 
@@ -140,14 +137,15 @@ Open <http://localhost:3000>.
 - Cache TTL = 30 days. Audit retention = 30 days. Completed bulk jobs purged after **7 days**.
 - The Predictus token persists in `public.predictus_token` (singleton row), so it survives Edge Function cold starts.
 
-### LGPD trade-off: `bulk_job_items.document_value`
+### Bulk item document storage
 
-Bulk items store the raw CPF/CNPJ in cleartext (`document_value text not null`) because the Edge Function needs the original digits to call Predictus — the SHA-256 hash is irreversible. The exposure is mitigated by:
+`bulk_job_items.document_encrypted` holds the CPF/CNPJ as `bytea`, encrypted with the same Vault key (`predictus_cache_key`) used by `predictus_cache.encrypted_payload`. The Server Action encrypts via `encryptText` before insert; the Edge Function decrypts inline (`decryptText`) immediately before each Predictus call. Combined with:
 
-- **Short retention.** Completed/failed jobs (and their items via cascade) are purged daily 7 days after `finished_at` by the `purge-old-bulk-jobs-daily` pg_cron job.
-- **Service-role only writes.** RLS allows operators to read their own items via the parent job, but writes go through the service-role client (Server Action + Edge Function).
+- **7-day purge** of completed/failed jobs via `purge-old-bulk-jobs-daily`
+- **Service-role only writes** (RLS denies INSERT/UPDATE for authenticated users)
+- **Vault-backed key** rotatable independently from application secrets
 
-A future iteration should encrypt `document_value` with the same Vault key used by `predictus_cache.encrypted_payload`. Tracked in the Status section.
+…the cleartext window is reduced to the Edge Function call stack.
 
 ## Status
 
@@ -189,12 +187,22 @@ What is implemented and tested in this commit:
       and `bulk_job_items` — progress bar + per-item status table
 - [x] `supabase/functions/process-bulk-job/` Edge Function (Deno) that
       reuses the TS modules under Node — same tested code path
+- [x] `signOut` Server Action + `<SignOutButton>` on the home (audit log of logout)
+- [x] `/audit` page — operator reads their own `audit_log` via RLS,
+      with action labels, masked hashes and per-event metadata
+- [x] `scripts/bootstrap-vault.sql` — idempotent script that creates
+      the `predictus_cache_key` Vault secret
+- [x] `lib/crypto/vault.ts` — `encryptText`/`decryptText` extracted from
+      `lib/predictus/cache.ts` for reuse (6 tests). Cache refactored
+      to use it.
+- [x] `bulk_job_items.document_value` (plaintext) replaced by
+      `document_encrypted bytea`. `createBulkJob` now accepts an
+      injected `encryptDocument` and the Edge Function decrypts via
+      `decryptText` immediately before each Predictus call. The
+      plaintext CPF/CNPJ never persists past the in-memory stack of
+      `processBulkItem`.
 
-What is **not** implemented yet (next iteration):
+What is **not** implemented yet:
 
-- [ ] Sign-out flow
-- [ ] Audit log viewer page (operator sees own audit trail)
-- [ ] Vault key bootstrap script (`predictus_cache_key`)
-- [ ] Encrypted-at-rest storage for `bulk_job_items.document_value`
-      (currently plaintext; mitigated by a 7-day purge of completed
-      jobs — see `supabase/migrations/20260520180400_*.sql`)
+_(Nothing critical for the scoped MVP. Future candidates listed under
+"Known limitations" for visibility.)_

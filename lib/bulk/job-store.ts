@@ -5,7 +5,8 @@ export const MAX_ITEMS_PER_JOB = 250;
 
 export type BulkItemInput = {
   documentHash: string;
-  documentValue: string;
+  /** Raw CPF/CNPJ digits — will be encrypted before reaching the database. */
+  documentRaw: string;
   documentType: 'cpf' | 'cnpj';
   documentPreview: string;
 };
@@ -21,11 +22,20 @@ export type ItemOutcome =
   | { kind: 'clean'; resultCount: number }
   | { kind: 'error'; message: string };
 
-export async function createBulkJob(
-  client: SupabaseClient<Database>,
-  userId: string,
-  items: BulkItemInput[],
-): Promise<{ jobId: string }> {
+export type CreateBulkJobOptions = {
+  client: SupabaseClient<Database>;
+  userId: string;
+  items: BulkItemInput[];
+  /**
+   * Encrypts the raw CPF/CNPJ so it can be stored in
+   * `bulk_job_items.document_encrypted`. Injectable so the caller picks the
+   * crypto stack (Vault RPC in production, a stub in tests).
+   */
+  encryptDocument: (raw: string) => Promise<string>;
+};
+
+export async function createBulkJob(options: CreateBulkJobOptions): Promise<{ jobId: string }> {
+  const { client, userId, items, encryptDocument } = options;
   if (items.length === 0) {
     throw new Error('createBulkJob requires at least 1 item.');
   }
@@ -47,13 +57,15 @@ export async function createBulkJob(
   }
 
   const jobId = data.id;
-  const itemRows = items.map((it) => ({
-    job_id: jobId,
-    document_hash: it.documentHash,
-    document_value: it.documentValue,
-    document_type: it.documentType,
-    document_preview: it.documentPreview,
-  }));
+  const itemRows = await Promise.all(
+    items.map(async (it) => ({
+      job_id: jobId,
+      document_hash: it.documentHash,
+      document_encrypted: await encryptDocument(it.documentRaw),
+      document_type: it.documentType,
+      document_preview: it.documentPreview,
+    })),
+  );
   const { error: itemsError } = await client.from('bulk_job_items').insert(itemRows as never);
   if (itemsError) {
     throw new Error(`createBulkJob: failed to insert items: ${itemsError.message}`);

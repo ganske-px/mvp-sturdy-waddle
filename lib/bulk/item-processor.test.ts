@@ -8,7 +8,7 @@ function makeItem(overrides: Partial<BulkItemRow> = {}): BulkItemRow {
     id: 'item-1',
     job_id: 'job-1',
     document_hash: 'hash-abc',
-    document_value: '11144477735',
+    document_encrypted: 'enc(11144477735)',
     document_type: 'cpf',
     document_preview: '111.***.***-35',
     status: 'pending',
@@ -26,6 +26,7 @@ function buildStubDeps(
     predictusThrows?: Error;
     cacheGetThrows?: Error;
     cacheSetThrows?: Error;
+    decryptDocumentImpl?: (ciphertext: string) => Promise<string>;
   } = {},
 ) {
   const getCachedResults = vi.fn(async (_admin: unknown, _hash: string) => {
@@ -53,12 +54,20 @@ function buildStubDeps(
     async (_event: unknown, _client: unknown, _opts?: unknown) => undefined,
   );
 
+  // Default: strip the deterministic "enc(...)" wrapper from the test fixtures.
+  const decryptDocument = vi.fn(
+    opts.decryptDocumentImpl ??
+      (async (ciphertext: string) =>
+        ciphertext.startsWith('enc(') ? ciphertext.slice(4, -1) : ciphertext),
+  );
+
   const deps: ItemProcessorDeps = {
     admin: {} as never,
     predictus: { searchByCpf, searchByCnpj } as never,
     audit: writeAuditLog,
     getCachedResults,
     setCachedResults,
+    decryptDocument,
     userId: 'user-1',
     ip: '203.0.113.5',
     userAgent: 'EdgeFn/1.0',
@@ -66,7 +75,14 @@ function buildStubDeps(
 
   return {
     deps,
-    spies: { getCachedResults, setCachedResults, searchByCpf, searchByCnpj, writeAuditLog },
+    spies: {
+      getCachedResults,
+      setCachedResults,
+      searchByCpf,
+      searchByCnpj,
+      writeAuditLog,
+      decryptDocument,
+    },
   };
 }
 

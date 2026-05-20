@@ -15,6 +15,7 @@ import {
   setJobStatus,
 } from '../../../lib/bulk/job-store.ts';
 import { processBulkJob } from '../../../lib/bulk/processor.ts';
+import { decryptText } from '../../../lib/crypto/vault.ts';
 import { getCachedResults, setCachedResults } from '../../../lib/predictus/cache.ts';
 import { PredictusClient } from '../../../lib/predictus/client.ts';
 import { SupabaseTokenStore } from '../../../lib/predictus/token-store.ts';
@@ -107,6 +108,7 @@ Deno.serve(async (req: Request) => {
               audit: writeAuditLog,
               getCachedResults,
               setCachedResults,
+              decryptDocument: (ciphertext) => decryptText(admin as never, ciphertext),
               userId,
             }),
           sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
