@@ -216,3 +216,35 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# ===========================
+# Next.js / Node
+# ===========================
+node_modules/
+.next/
+out/
+build/
+.turbo/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# ===========================
+# Test coverage
+# ===========================
+coverage/
+.vitest/
+
+# ===========================
+# Env / secrets (extra)
+# ===========================
+.env*.local
+.env.development
+.env.production
+
+# ===========================
+# Legacy Streamlit (PII data)
+# ===========================
+legacy-streamlit/data/
+legacy-streamlit/.streamlit/secrets.toml
+legacy-streamlit/secrets.toml
+data/historico_pesquisas.json
