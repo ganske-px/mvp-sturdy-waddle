@@ -142,6 +142,7 @@ export type Database = {
           id: string;
           job_id: string;
           document_hash: string;
+          document_value: string;
           document_type: 'cpf' | 'cnpj';
           document_preview: string;
           status: 'pending' | 'processing' | 'found' | 'clean' | 'error';
@@ -153,6 +154,7 @@ export type Database = {
           id?: string;
           job_id: string;
           document_hash: string;
+          document_value: string;
           document_type: 'cpf' | 'cnpj';
           document_preview: string;
           status?: 'pending' | 'processing' | 'found' | 'clean' | 'error';
@@ -164,6 +166,7 @@ export type Database = {
           id?: string;
           job_id?: string;
           document_hash?: string;
+          document_value?: string;
           document_type?: 'cpf' | 'cnpj';
           document_preview?: string;
           status?: 'pending' | 'processing' | 'found' | 'clean' | 'error';

@@ -137,8 +137,17 @@ Open <http://localhost:3000>.
 
 - Bulk CSV ≤ 250 documents per job (enforced server-side in `parseCsv` and via a CHECK constraint on `bulk_jobs.total_items`).
 - Predictus rate limit assumed at **1000 requests/hour**, so the Edge Function paces requests at **1 every 3.6 s**.
-- Cache TTL = 30 days. Audit retention = 30 days.
+- Cache TTL = 30 days. Audit retention = 30 days. Completed bulk jobs purged after **7 days**.
 - The Predictus token persists in `public.predictus_token` (singleton row), so it survives Edge Function cold starts.
+
+### LGPD trade-off: `bulk_job_items.document_value`
+
+Bulk items store the raw CPF/CNPJ in cleartext (`document_value text not null`) because the Edge Function needs the original digits to call Predictus — the SHA-256 hash is irreversible. The exposure is mitigated by:
+
+- **Short retention.** Completed/failed jobs (and their items via cascade) are purged daily 7 days after `finished_at` by the `purge-old-bulk-jobs-daily` pg_cron job.
+- **Service-role only writes.** RLS allows operators to read their own items via the parent job, but writes go through the service-role client (Server Action + Edge Function).
+
+A future iteration should encrypt `document_value` with the same Vault key used by `predictus_cache.encrypted_payload`. Tracked in the Status section.
 
 ## Status
 
@@ -167,11 +176,25 @@ What is implemented and tested in this commit:
 - [x] `searchByDoc` is cache-first: cache hit returns immediately, miss
       hits Predictus then UPSERTs the cache. UI shows a "Cached — fetched X
       ago" or "Fresh" badge.
+- [x] `lib/bulk/job-store.ts` — CRUD over `bulk_jobs`/`bulk_job_items` —
+      15 tests
+- [x] `lib/bulk/processor.ts` — orchestration loop with per-item error
+      isolation, rate-limited sleep between items, completion logic —
+      8 tests
+- [x] `lib/bulk/item-processor.ts` — cache + Predictus + audit per item —
+      10 tests
+- [x] `/bulk` upload UI + `createBulkJobAction` Server Action that parses
+      the CSV, persists job+items, and triggers the Edge Function
+- [x] `/bulk/[jobId]` page subscribed to Realtime updates on `bulk_jobs`
+      and `bulk_job_items` — progress bar + per-item status table
+- [x] `supabase/functions/process-bulk-job/` Edge Function (Deno) that
+      reuses the TS modules under Node — same tested code path
 
 What is **not** implemented yet (next iteration):
 
-- [ ] Bulk upload UI + Server Action `createBulkJob`
-- [ ] Edge Function `process-bulk-job` body
 - [ ] Sign-out flow
 - [ ] Audit log viewer page (operator sees own audit trail)
 - [ ] Vault key bootstrap script (`predictus_cache_key`)
+- [ ] Encrypted-at-rest storage for `bulk_job_items.document_value`
+      (currently plaintext; mitigated by a 7-day purge of completed
+      jobs — see `supabase/migrations/20260520180400_*.sql`)

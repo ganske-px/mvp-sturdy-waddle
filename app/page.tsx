@@ -12,7 +12,7 @@ export default function HomePage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Search</CardTitle>
@@ -21,6 +21,21 @@ export default function HomePage() {
           <CardContent>
             <Link href="/search" className={buttonVariants({ className: 'w-full' })}>
               Open search
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Bulk</CardTitle>
+            <CardDescription>Look up many documents from a CSV.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/bulk"
+              className={buttonVariants({ variant: 'outline', className: 'w-full' })}
+            >
+              New bulk job
             </Link>
           </CardContent>
         </Card>
