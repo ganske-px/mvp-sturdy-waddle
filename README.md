@@ -1,487 +1,163 @@
-# Legal Process Search MVP
+# mvp-sturdy-waddle
 
-A comprehensive judicial process search system with AI-powered risk assessment for employee background checks (Know-Your-Employee).
+Internal background check app for PX Center — operators run judicial process searches against the Predictus API by CPF, CNPJ or name, individually or in batches via CSV upload.
 
-## 🚀 Features
+> **Migration note:** this repository was rewritten from a Streamlit + Python MVP to a Supabase + Next.js + Vercel stack. The original Python implementation is preserved under [`legacy-streamlit/`](./legacy-streamlit) for reference and is not deployed.
 
-### Core Functionality
-- 🔍 **Single Search**: Search judicial processes by name or CPF
-- 📂 **Bulk Search**: Upload CSV files to search multiple CPFs at once
-- 📋 **Process Details**: View complete case information, parties, lawyers, movements
-- 💾 **Search History**: Automatic persistence of searches and process details
-- 📊 **Statistics**: Aggregated insights across searches
+## Stack
 
-### AI-Powered Risk Assessment
-- 🤖 **Google Gemini Integration**: Advanced AI analysis of legal risk
-- 🎯 **Multi-Factor Scoring**: 4-factor risk calculation (0-100 scale)
-  - Process volume
-  - Defendant role frequency
-  - Case type severity
-  - Financial exposure
-- 📈 **Risk Levels**: Low / Medium / High / Critical classification
-- 🚩 **Red Flags**: AI-identified specific concerns
-- 💡 **Insights**: Context-aware employment recommendations
-- 📥 **CSV Export**: Complete risk data in downloadable reports
+- **Frontend:** Next.js 16 (App Router) + React 19 + TypeScript strict
+- **UI:** Tailwind 4 + shadcn/ui + Biome
+- **Backend:** Supabase (Postgres 16 + Auth + Edge Functions + Realtime + Vault + pg_cron)
+- **Deploy:** Vercel
+- **Tests:** Vitest (TDD)
 
-### Technical Features
-- 🏗️ **MVC Architecture**: Clean, maintainable code structure
-- 🔐 **Authentication**: Secure user login system
-- 📊 **Analytics**: Posthog integration for usage tracking
-- 🎨 **Modern UI**: Streamlit-based responsive interface
-- 🌐 **API Integration**: Predictus judicial process API
+## Scope (paridade pura)
 
-## 📋 Table of Contents
+- Single search by CPF, CNPJ or name (Predictus)
+- Bulk search by CSV upload, capped at **250 documents per job**
+- Per-operator search history (private, RLS)
+- Shared Predictus cache with **30-day TTL** (encrypted at rest)
+- Append-only audit log retained for **30 days**, purged daily by `pg_cron`
+- Magic-link auth was rejected; **email + password only**, with signup disabled
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Project Structure](#project-structure)
-- [Usage](#usage)
-- [Risk Assessment](#risk-assessment)
-- [Development](#development)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
+## What is intentionally out of scope
 
-## 🛠️ Installation
+- Gemini-powered risk assessment (mentioned in the original README but never shipped)
+- PostHog instrumentation
+- Multi-tenant organisations
+- Cancellation of in-flight bulk jobs
 
-### Prerequisites
-- Python 3.8+
-- pip package manager
-- Google Gemini API key (free tier available)
+## Auth model
 
-### Install Dependencies
+Operators are created **manually** by the admin via Supabase Studio (Auth → Add user). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `middleware.ts` enforces that any authenticated user without a `public.users` row is redirected to `/access-denied`. This means revoking access = deleting the `public.users` row (keeping the auth row dormant).
+
+Password requirements: 12+ chars, mixed case, digits, symbols.
+
+## LGPD posture
+
+- CPF, CNPJ and personal names **never** appear in plaintext in `public.searches` or `public.audit_log`. Both tables store a SHA-256 `document_hash` and a partially-masked `term_preview` (e.g. `123.***.***-10`).
+- The full Predictus payload is cached in `public.predictus_cache.encrypted_payload`, encrypted with `pgp_sym_encrypt` using a key stored in Supabase Vault under `predictus_cache_key`.
+- `pg_cron` runs daily at 03:00 UTC to purge `audit_log`, expired `predictus_cache` rows, and completed `bulk_jobs` older than 30 days.
+- Audit log captures `user_id`, `action`, `document_hash`, `ip`, `user_agent` and `metadata` (jsonb). Operators can read their own audit history; writes happen only via the service-role key.
+
+## Project layout
+
+```
+app/                        Next.js App Router pages
+components/ui/              shadcn/ui primitives
+lib/
+├── validators/{cpf,cnpj}   Check-digit validation, normalize, format, mask
+├── csv/parser              CSV → de-duped CPF/CNPJ lists with 250-row cap
+├── predictus/              Predictus API client (auth refresh + retries)
+└── supabase/               Browser/server/admin clients + middleware
+supabase/
+├── migrations/             SQL schema, RLS, crypto helpers, pg_cron jobs
+└── functions/
+    └── process-bulk-job/   Edge Function for async bulk processing
+tests/                      Vitest suites
+legacy-streamlit/           Original Python MVP (not deployed)
+```
+
+## Local setup
+
+### 1. Install dependencies
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd mvp-sturdy-waddle
-
-# Install required packages
-pip install -r requirements.txt
+pnpm install
 ```
 
-### Required Packages
-```
-streamlit==1.48.1
-requests==2.32.5
-posthog==6.6.1
-google-generativeai==0.8.3
-pandas==2.2.3
-python-dateutil==2.9.0.post0
-```
+### 2. Boot Supabase locally
 
-## ⚡ Quick Start
-
-### 1. Get API Keys
-
-#### Google Gemini (Required for Risk Assessment)
-1. Visit https://aistudio.google.com/app/apikey
-2. Sign in with Google account
-3. Click "Create API Key"
-4. Copy your key
-
-**Free Tier:** 1,500 requests/day, no credit card required
-
-#### Predictus API (Required for Process Search)
-Contact Predictus to obtain API credentials.
-
-### 2. Configure Secrets
-
-Create `.streamlit/secrets.toml`:
-
-```toml
-# Google Gemini - Risk Assessment
-GEMINI_API_KEY = "your_gemini_api_key_here"
-GEMINI_MODEL = "gemini-1.5-flash"
-
-# Predictus API
-PREDICTUS_USERNAME = "your_username"
-PREDICTUS_PASSWORD = "your_password"
-
-# Posthog Analytics (Optional)
-POSTHOG_KEY = "your_posthog_key"
-POSTHOG_HOST = "https://app.posthog.com"
-
-# Application Users
-[USUARIOS_APP]
-"admin" = "admin123"
-"user" = "user123"
-```
-
-### 3. Run the Application
+You need Docker running.
 
 ```bash
-streamlit run app.py
+pnpm exec supabase start
 ```
 
-Visit http://localhost:8501 in your browser.
-
-### 4. Login & Search
-
-1. Login with configured credentials
-2. Search by name or CPF
-3. View results with risk assessment
-4. Export data as needed
-
-## ⚙️ Configuration
-
-### Application Settings
-
-Edit `config/settings.py`:
-
-```python
-# History Configuration
-MAX_HISTORY_ITEMS = 50
-
-# API Timeouts
-REQUEST_TIMEOUT = 30
-
-# File Upload Limits
-MAX_FILE_SIZE_MB = 10
-ALLOWED_FILE_TYPES = ['csv']
-```
-
-### Risk Assessment Configuration
-
-Customize risk weights in `models/risk_assessment.py`:
-
-```python
-# Risk factor weights (must sum to 1.0)
-WEIGHTS = {
-    "process_count": 0.25,      # 25%
-    "defendant_role": 0.30,     # 30%
-    "case_severity": 0.25,      # 25%
-    "financial_exposure": 0.20  # 20%
-}
-
-# Case severity scores (0-100)
-CASE_SEVERITY = {
-    "criminal": 100,
-    "trabalhista": 70,
-    "civil": 40,
-    # Add custom case types...
-}
-```
-
-### Gemini Model Options
-
-Choose model in secrets.toml:
-
-- `gemini-1.5-flash`: Fast, efficient (recommended)
-- `gemini-1.5-pro`: Highest quality, slower
-- `gemini-1.5-flash-8b`: Fastest, good for high volume
-
-## 📁 Project Structure
-
-```
-mvp-sturdy-waddle/
-├── app.py                      # Main application entry point
-├── requirements.txt            # Python dependencies
-│
-├── config/                     # Configuration
-│   └── settings.py            # App constants and settings
-│
-├── models/                     # Business Logic & Data
-│   ├── analytics.py           # Posthog analytics
-│   ├── auth.py                # Authentication
-│   ├── predictus_api.py       # API client
-│   └── risk_assessment.py     # Risk scoring & LLM
-│
-├── controllers/                # Business Orchestration
-│   ├── bulk_search.py         # Bulk CPF searches
-│   └── csv_processor.py       # CSV file processing
-│
-├── views/                      # UI Components
-│   ├── auth_components.py     # Login & user info
-│   ├── bulk_search_components.py  # Bulk results UI
-│   ├── process_components.py  # Process details
-│   └── risk_components.py     # Risk assessment panels
-│
-├── utils/                      # Utilities
-│   ├── data_helpers.py        # Formatting & validation
-│   └── file_storage.py        # JSON persistence
-│
-└── docs/                       # Documentation
-    ├── RISK_ASSESSMENT_README.md      # Risk feature docs
-    ├── SETUP_RISK_ASSESSMENT.md       # Quick setup
-    ├── MVC_ARCHITECTURE.md            # Architecture guide
-    └── REFACTORING_SUMMARY.md         # Code organization
-```
-
-## 📖 Usage
-
-### Single Search
-
-1. Enter a **name** or **CPF** in the search box
-2. Click "🔍 New Search"
-3. View results with:
-   - Risk assessment panel
-   - Process statistics
-   - Detailed process information
-4. Click "Get Details" on processes for movement history
-
-### Bulk Search (CSV)
-
-1. Switch to "📂 Bulk Search (CSV)" tab
-2. Upload CSV file containing CPFs
-3. Preview extracted CPFs
-4. Click "🔍 Start Bulk Search"
-5. Wait for completion (progress bar shows status)
-6. View results with:
-   - Summary statistics
-   - Risk level breakdown
-   - Individual risk assessments
-7. Click "📥 Download Results (CSV)" to export
-
-### Search History
-
-- All searches automatically saved
-- Access from sidebar
-- Click "📂 Open" to reload a search
-- Click "🗑️ Delete" to remove from history
-
-## 🎯 Risk Assessment
-
-The system evaluates employment risk using AI and quantitative metrics.
-
-### Risk Factors (Weighted)
-
-1. **Process Count (25%)**
-   - 0 processes: 0 points
-   - 1 process: 20 points
-   - 2 processes: 35 points
-   - 3-5 processes: 50 points
-   - 6-10 processes: 70 points
-   - 10+ processes: 70+ points
-
-2. **Defendant Role (30%)**
-   - Percentage of cases as defendant
-   - Higher risk than plaintiff role
-   - Keywords: réu, executado, demandado
-
-3. **Case Severity (25%)**
-   - Criminal/Penal: 100 (highest)
-   - Labor (Trabalhista): 70
-   - Execution: 60
-   - Civil: 40
-   - Family/Consumer: 25-30
-
-4. **Financial Exposure (20%)**
-   - < R$ 10k: 20 points
-   - R$ 10k-50k: 35 points
-   - R$ 50k-100k: 50 points
-   - R$ 100k-500k: 70 points
-   - R$ 500k+: 70+ points
-
-### Risk Levels
-
-| Level | Score | Color | Meaning |
-|-------|-------|-------|---------|
-| ✅ Low | 0-25 | Green | Minimal concerns - approve |
-| ⚠️ Medium | 26-50 | Orange | Some concerns - review |
-| 🔴 High | 51-75 | Red | Significant concerns - careful review |
-| ⛔ Critical | 76-100 | Dark Red | Major red flags - high caution |
-
-### AI Insights
-
-Google Gemini analyzes each case and provides:
-- **Key Insights**: 2-3 bullet points about findings
-- **Red Flags**: Specific concerns identified
-- **Recommendation**: Clear guidance (approve/review/reject)
-- **Context**: Understands Brazilian legal system
-
-### Privacy & Cost
-
-**Privacy:**
-- Data sent to Google's Gemini API
-- Google doesn't use API data for training
-- All data encrypted in transit (HTTPS)
-- Consider data sensitivity for your use case
-
-**Cost:**
-- **Free Tier**: 1,500 requests/day (no credit card)
-- **Paid Tier**: ~$0.00015 per analysis
-- **100 checks**: < $0.02 (two cents)
-
-## 🔧 Development
-
-### MVC Architecture
-
-The application follows Model-View-Controller pattern:
-
-- **Models**: Business logic, data operations
-- **Views**: UI components (Streamlit)
-- **Controllers**: Orchestrate models and views
-- **Utils**: Reusable helper functions
-- **Config**: Centralized configuration
-
-### Running Tests
+The first run downloads container images and applies the migrations under `supabase/migrations/`. The output prints `API URL`, `anon key` and `service_role key` — copy those into `.env.local`:
 
 ```bash
-# Unit tests (models & utils)
-pytest tests/test_models.py
-pytest tests/test_utils.py
-
-# Integration tests (controllers)
-pytest tests/test_controllers.py
-
-# All tests
-pytest
+cp .env.local.example .env.local
+# fill in the printed values
 ```
 
-### Adding New Features
+### 3. Initialize the Vault key for encrypted cache
 
-Example: Add email notifications
+After `supabase start`, open `pnpm exec supabase studio` → SQL editor and run:
 
-1. **Model** (`models/notifications.py`):
-```python
-class EmailNotifier:
-    def send_risk_alert(self, cpf, risk_data):
-        # Email logic
-        pass
+```sql
+select vault.create_secret(
+  encode(gen_random_bytes(32), 'base64'),
+  'predictus_cache_key',
+  'Encryption key for predictus_cache.encrypted_payload'
+);
 ```
 
-2. **Controller** (`controllers/bulk_search.py`):
-```python
-if risk_data['level'] == 'critical':
-    notifier.send_risk_alert(cpf, risk_data)
-```
+Until this secret exists, calls to `encrypt_payload` / `decrypt_payload` will fail with a clear error.
 
-3. **View** (`views/risk_components.py`):
-```python
-st.info("📧 Alert sent to HR team")
-```
+### 4. Create an operator
 
-### Code Style
+In Supabase Studio → Authentication → Add user. Set email + a password meeting the requirements. The trigger mirrors the user into `public.users` automatically.
 
-- Follow PEP 8 guidelines
-- Use type hints
-- Add docstrings to all functions
-- Keep modules under 300 lines
-- Single responsibility principle
+### 5. Configure Predictus credentials
 
-## 📚 Documentation
+Fill `PREDICTUS_USERNAME` and `PREDICTUS_PASSWORD` in `.env.local`. These are shared between all operators.
 
-Comprehensive documentation available:
-
-- **[RISK_ASSESSMENT_README.md](RISK_ASSESSMENT_README.md)**: Complete risk assessment guide
-- **[SETUP_RISK_ASSESSMENT.md](SETUP_RISK_ASSESSMENT.md)**: 5-minute setup guide
-- **[MVC_ARCHITECTURE.md](MVC_ARCHITECTURE.md)**: Architecture documentation
-- **[REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)**: Code organization details
-
-## 🤝 Contributing
-
-### Guidelines
-
-1. Follow MVC pattern
-2. Keep modules focused (single responsibility)
-3. Add tests for new features
-4. Update documentation
-5. Use clear commit messages
-
-### Development Workflow
+### 6. Run the app
 
 ```bash
-# Create feature branch
-git checkout -b feature/new-feature
-
-# Make changes
-# ... edit files ...
-
-# Run tests
-pytest
-
-# Commit changes
-git add .
-git commit -m "Add: new feature description"
-
-# Push and create PR
-git push origin feature/new-feature
+pnpm dev
 ```
 
-## 🐛 Troubleshooting
+Open <http://localhost:3000>.
 
-### LLM Not Available
+## Scripts
 
-**Error**: "LLM analysis unavailable"
+| Script | Purpose |
+| --- | --- |
+| `pnpm dev` | Run Next.js dev server |
+| `pnpm build` | Production build |
+| `pnpm typecheck` | TypeScript strict check (no emit) |
+| `pnpm test` | Run all Vitest suites once |
+| `pnpm test:watch` | Vitest watch mode |
+| `pnpm test:coverage` | Coverage report under `coverage/` |
+| `pnpm lint` | Biome check |
+| `pnpm lint:fix` | Biome check + autofix |
+| `pnpm format` | Biome format |
 
-**Solutions:**
-1. Check `GEMINI_API_KEY` in `.streamlit/secrets.toml`
-2. Verify API key at https://aistudio.google.com/app/apikey
-3. Check you haven't exceeded free tier (1500/day)
-4. Test key in Google AI Studio
+## Deployment
 
-### Import Errors
+- **Hosting:** Vercel. Connect this repo, set the same env vars from `.env.local` in Vercel Project Settings.
+- **Database:** managed Supabase project. Run `pnpm exec supabase db push` against the linked project to apply migrations.
+- **Edge Function:** `pnpm exec supabase functions deploy process-bulk-job` after the function is implemented.
+- **Vercel function timeout:** the bulk-job Server Action only enqueues; the heavy lifting runs in the Supabase Edge Function (no Vercel timeout pressure).
 
-**Error**: `ModuleNotFoundError`
+## Limits and assumptions
 
-**Solution:**
-```bash
-pip install -r requirements.txt
-```
+- Bulk CSV ≤ 250 documents per job (enforced server-side in `parseCsv` and via a CHECK constraint on `bulk_jobs.total_items`).
+- Predictus rate limit assumed at **1000 requests/hour**, so the Edge Function paces requests at **1 every 3.6 s**.
+- Cache TTL = 30 days. Audit retention = 30 days.
+- The Predictus token persists in `public.predictus_token` (singleton row), so it survives Edge Function cold starts.
 
-### Authentication Failed
+## Status
 
-**Error**: "Invalid username or password"
+What is implemented and tested in this commit:
 
-**Solution:**
-1. Check `.streamlit/secrets.toml` has `[USUARIOS_APP]` section
-2. Verify username and password match exactly
-3. Passwords are case-sensitive
+- [x] Branch `feature/nextjs-rewrite` off `main`, legacy Python preserved under `legacy-streamlit/`
+- [x] Next.js + TS strict + Tailwind 4 + shadcn/ui + Biome + Vitest scaffold
+- [x] Supabase schema with RLS, crypto helpers and pg_cron retention (migrations 1–4)
+- [x] CPF/CNPJ validators with check digits — 40 tests
+- [x] CSV parser with 250-doc cap and CNPJ-before-CPF disambiguation — 14 tests
+- [x] Predictus client with token refresh and 3-retry backoff — 15 tests
+- [x] Supabase browser/server/admin clients + middleware allowlist
 
-### Rate Limits
+What is **not** implemented yet (intentionally — next iteration):
 
-**Error**: 429 or "quota exceeded"
-
-**Solution:**
-- Free tier: 15 requests/minute, 1500/day
-- Wait and retry
-- Consider upgrading to paid tier
-- For bulk searches, spread over time
-
-## 📊 Performance
-
-### Response Times
-- Single search: 2-3 seconds
-- Risk assessment: 1-2 seconds
-- Bulk search (100 CPFs): 3-5 minutes
-
-### Resource Usage
-- Memory: ~200MB
-- CPU: Low (API-based processing)
-- Disk: Minimal (JSON history files)
-
-## 🔒 Security
-
-### Best Practices
-1. Never commit `secrets.toml` to git
-2. Use environment variables in production
-3. Rotate API keys periodically
-4. Use separate keys for dev/staging/prod
-5. Monitor API usage regularly
-
-### Data Privacy
-- Judicial process data sent to Google API
-- Review Google's privacy policy
-- Consider data sensitivity
-- Implement audit logging if needed
-
-## 📄 License
-
-This project is proprietary software. All rights reserved.
-
-## 📞 Support
-
-For issues or questions:
-1. Check documentation in `/docs`
-2. Review troubleshooting section
-3. Check Google Cloud status
-4. Open issue in repository
-
----
-
-**Version**: 2.0 (MVC + Risk Assessment)
-**Last Updated**: 2025-10-21
-**Python**: 3.8+
-**Framework**: Streamlit 1.48.1
-**AI**: Google Gemini 1.5
+- [ ] Login page + Server Actions wiring
+- [ ] Single-search UI + Server Action `searchByDoc`
+- [ ] Bulk upload UI + Server Action `createBulkJob`
+- [ ] Edge Function `process-bulk-job` body
+- [ ] History page (UI)
+- [ ] Audit log page (UI)
+- [ ] `audit.ts` helper that writes before each Predictus call

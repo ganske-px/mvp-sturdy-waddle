@@ -23,7 +23,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -153,7 +152,6 @@ ENV/
 env.bak/
 venv.bak/
 .vscode
-*.json
 
 # Spyder project settings
 .spyderproject
