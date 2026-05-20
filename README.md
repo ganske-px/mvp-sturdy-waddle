@@ -151,13 +151,22 @@ What is implemented and tested in this commit:
 - [x] CSV parser with 250-doc cap and CNPJ-before-CPF disambiguation — 14 tests
 - [x] Predictus client with token refresh and 3-retry backoff — 15 tests
 - [x] Supabase browser/server/admin clients + proxy allowlist (Next.js 16 `proxy.ts`)
+- [x] `lib/hash.ts` — SHA-256 document hashing with cross-type separation — 16 tests
+- [x] `lib/audit.ts` — audit_log writer + request context extractor — 10 tests
+- [x] `lib/validators/name.ts` — name masking for the UI — 5 tests
+- [x] `/login` page + `signIn` Server Action + `/access-denied`
+- [x] `/search` page + `searchByDoc` Server Action (audit-before-Predictus)
+- [x] `/history` page (operator's last 100 searches via RLS)
+- [x] Home `/` with navigation cards (Search / History)
 
-What is **not** implemented yet (intentionally — next iteration):
+What is **not** implemented yet (next iteration):
 
-- [ ] Login page + Server Actions wiring
-- [ ] Single-search UI + Server Action `searchByDoc`
+- [ ] `predictus_cache` integration via `encrypt_payload`/`decrypt_payload` RPC
+      (currently every single search hits Predictus directly — schema is ready
+      but the Server Action does not consult the cache yet)
+- [ ] `predictus_token` persistence across Vercel cold starts (currently each
+      request creates a fresh client and re-authenticates)
 - [ ] Bulk upload UI + Server Action `createBulkJob`
 - [ ] Edge Function `process-bulk-job` body
-- [ ] History page (UI)
-- [ ] Audit log page (UI)
-- [ ] `audit.ts` helper that writes before each Predictus call
+- [ ] Sign-out flow
+- [ ] Audit log viewer page (operator sees own audit trail)
