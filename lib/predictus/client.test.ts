@@ -211,6 +211,67 @@ describe('PredictusClient — non-retryable 4xx', () => {
   });
 });
 
+describe('PredictusClient — token persistence hooks', () => {
+  it('uses initialToken without calling /auth on the first request', async () => {
+    const { fetchMock, calls } = buildFetch([jsonResponse([])]);
+    const { client } = buildClient({ fetch: fetchMock, initialToken: 'preloaded-token' });
+
+    await client.searchByCpf('11144477735');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(
+      'https://api.predictus.test/predictus-api/processos/judiciais/buscarPorCPFParte',
+    );
+    expect((calls[0]?.init?.headers as Record<string, string>).Authorization).toBe(
+      'Bearer preloaded-token',
+    );
+  });
+
+  it('fires onTokenChange after authenticate()', async () => {
+    const onTokenChange = vi.fn();
+    const { fetchMock } = buildFetch([jsonResponse({ accessToken: 'fresh-token' })]);
+    const { client } = buildClient({ fetch: fetchMock, onTokenChange });
+
+    await client.authenticate();
+    expect(onTokenChange).toHaveBeenCalledTimes(1);
+    expect(onTokenChange).toHaveBeenCalledWith('fresh-token');
+  });
+
+  it('fires onTokenChange after the implicit refresh triggered by a 401', async () => {
+    const onTokenChange = vi.fn();
+    const { fetchMock } = buildFetch([
+      emptyResponse(401), // first search with initialToken — stale
+      jsonResponse({ accessToken: 'fresh-token' }), // refresh
+      jsonResponse([]), // retry with fresh token
+    ]);
+    const { client } = buildClient({
+      fetch: fetchMock,
+      initialToken: 'stale-token',
+      onTokenChange,
+    });
+
+    await client.searchByCpf('11144477735');
+
+    expect(onTokenChange).toHaveBeenCalledTimes(1);
+    expect(onTokenChange).toHaveBeenCalledWith('fresh-token');
+  });
+
+  it('awaits an async onTokenChange before continuing', async () => {
+    const events: string[] = [];
+    const onTokenChange = vi.fn(async (token: string) => {
+      await Promise.resolve();
+      events.push(`stored:${token}`);
+    });
+    const { fetchMock } = buildFetch([jsonResponse({ accessToken: 'tok' }), jsonResponse([])]);
+    const { client } = buildClient({ fetch: fetchMock, onTokenChange });
+
+    await client.searchByCpf('11144477735');
+    events.push('search-done');
+
+    expect(events).toEqual(['stored:tok', 'search-done']);
+  });
+});
+
 describe('PredictusClient — endpoint routing', () => {
   it('searchByCnpj hits the CNPJ endpoint with the expected payload', async () => {
     const { fetchMock, calls } = buildFetch([

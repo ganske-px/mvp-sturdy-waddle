@@ -26,6 +26,19 @@ export type PredictusClientConfig = {
   maxRetries?: number;
   /** Initial backoff in ms. Doubles every retry. Defaults to 1000ms. */
   initialBackoffMs?: number;
+  /**
+   * Token to use on the first request without contacting /auth. Use this when
+   * a stored token has been pulled from `predictus_token` to skip auth on
+   * cold starts. If the token turns out to be stale the client will refresh
+   * on a 401 and notify through `onTokenChange`.
+   */
+  initialToken?: string;
+  /**
+   * Called whenever the client obtains a new access token (initial auth or
+   * a refresh after 401). The client awaits the promise before continuing,
+   * giving the store a chance to persist before the next request fires.
+   */
+  onTokenChange?: (token: string) => Promise<void> | void;
 };
 
 export class PredictusError extends Error {

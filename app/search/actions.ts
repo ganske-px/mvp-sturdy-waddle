@@ -2,7 +2,8 @@
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { hashDocument } from '@/lib/hash';
-import { PredictusClient } from '@/lib/predictus/client';
+import { getCachedResults, setCachedResults } from '@/lib/predictus/cache';
+import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import type { PredictusProcess } from '@/lib/predictus/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
@@ -27,6 +28,8 @@ export type SearchByDocOk = {
   results: PredictusProcess[];
   displayTerm: string;
   searchType: SearchType;
+  cached: boolean;
+  fetchedAt: string;
 };
 
 export type SearchByDocErr = {
@@ -35,18 +38,6 @@ export type SearchByDocErr = {
 };
 
 export type SearchByDocResult = SearchByDocOk | SearchByDocErr;
-
-function makePredictusClient(): PredictusClient {
-  const baseUrl = process.env.PREDICTUS_BASE_URL;
-  const username = process.env.PREDICTUS_USERNAME;
-  const password = process.env.PREDICTUS_PASSWORD;
-  if (!baseUrl || !username || !password) {
-    throw new Error(
-      'Predictus credentials missing — set PREDICTUS_BASE_URL, PREDICTUS_USERNAME, PREDICTUS_PASSWORD.',
-    );
-  }
-  return new PredictusClient({ baseUrl, username, password });
-}
 
 export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocResult> {
   const supabase = await createClient();
@@ -87,8 +78,8 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
   const admin = createAdminClient();
   const requestContext = extractRequestContext(await headers());
 
-  // Audit log BEFORE the Predictus call — we want a trail of the attempt
-  // regardless of whether the upstream returns successfully.
+  // Audit log BEFORE any external call — we want a trail of the attempt
+  // regardless of whether cache, Predictus, or the database fail.
   await writeAuditLog(
     {
       userId: user.id,
@@ -102,10 +93,38 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     { allowFailure: true },
   );
 
-  // Call Predictus
-  let results: PredictusProcess[];
+  // Cache lookup. A cache miss is silently absorbed — failing on cache infra
+  // would block the operator unnecessarily.
+  let cached: { results: PredictusProcess[]; fetchedAt: string } | null = null;
   try {
-    const client = makePredictusClient();
+    cached = await getCachedResults(admin, documentHash);
+  } catch (e) {
+    console.warn('predictus_cache lookup failed, falling through to Predictus:', e);
+  }
+
+  if (cached) {
+    await supabase.from('searches').insert({
+      user_id: user.id,
+      search_type: input.type,
+      document_hash: documentHash,
+      term_preview: termPreview,
+      result_count: cached.results.length,
+    } as never);
+    return {
+      ok: true,
+      results: cached.results,
+      displayTerm,
+      searchType: input.type,
+      cached: true,
+      fetchedAt: cached.fetchedAt,
+    };
+  }
+
+  // Cache miss — call Predictus.
+  let results: PredictusProcess[];
+  const fetchedAt = new Date().toISOString();
+  try {
+    const client = await createServerPredictusClient();
     results =
       input.type === 'cpf'
         ? await client.searchByCpf(trimmed.replace(/\D/g, ''))
@@ -114,7 +133,6 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
           : await client.searchByName(trimmed);
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Unknown Predictus error.';
-    // Record the failed search so it appears in history.
     await supabase.from('searches').insert({
       user_id: user.id,
       search_type: input.type,
@@ -126,7 +144,14 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     return { ok: false, error: message };
   }
 
-  // Record the search.
+  // Best-effort cache write. A failure here only loses the cache — the
+  // operator still sees their results.
+  try {
+    await setCachedResults(admin, documentHash, input.type, results);
+  } catch (e) {
+    console.warn('predictus_cache write failed:', e);
+  }
+
   await supabase.from('searches').insert({
     user_id: user.id,
     search_type: input.type,
@@ -135,5 +160,12 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     result_count: results.length,
   } as never);
 
-  return { ok: true, results, displayTerm, searchType: input.type };
+  return {
+    ok: true,
+    results,
+    displayTerm,
+    searchType: input.type,
+    cached: false,
+    fetchedAt,
+  };
 }

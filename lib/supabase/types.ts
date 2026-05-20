@@ -82,6 +82,23 @@ export type Database = {
           expires_at?: string;
         };
       };
+      predictus_token: {
+        Row: {
+          id: number;
+          access_token: string;
+          refreshed_at: string;
+        };
+        Insert: {
+          id?: number;
+          access_token: string;
+          refreshed_at?: string;
+        };
+        Update: {
+          id?: number;
+          access_token?: string;
+          refreshed_at?: string;
+        };
+      };
       bulk_jobs: {
         Row: {
           id: string;

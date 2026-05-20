@@ -25,6 +25,7 @@ export class PredictusClient {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly maxRetries: number;
   private readonly initialBackoffMs: number;
+  private readonly onTokenChange?: (token: string) => Promise<void> | void;
   private token: string | null = null;
 
   constructor(config: PredictusClientConfig) {
@@ -35,6 +36,8 @@ export class PredictusClient {
     this.sleep = config.sleep ?? defaultSleep;
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.initialBackoffMs = config.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF_MS;
+    this.onTokenChange = config.onTokenChange;
+    this.token = config.initialToken ?? null;
   }
 
   async authenticate(): Promise<string> {
@@ -56,6 +59,9 @@ export class PredictusClient {
     }
 
     this.token = token;
+    if (this.onTokenChange) {
+      await this.onTokenChange(token);
+    }
     return token;
   }
 

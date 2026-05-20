@@ -158,15 +158,20 @@ What is implemented and tested in this commit:
 - [x] `/search` page + `searchByDoc` Server Action (audit-before-Predictus)
 - [x] `/history` page (operator's last 100 searches via RLS)
 - [x] Home `/` with navigation cards (Search / History)
+- [x] `PredictusClient` exposes `initialToken` + `onTokenChange` hooks — 19 tests
+- [x] `SupabaseTokenStore` persists access token in `public.predictus_token` — 7 tests
+- [x] `createServerPredictusClient()` wires the store into the client so the
+      token survives cold starts
+- [x] `lib/predictus/cache.ts` round-trips encrypted payloads via the
+      `encrypt_payload`/`decrypt_payload` Vault RPCs — 9 tests
+- [x] `searchByDoc` is cache-first: cache hit returns immediately, miss
+      hits Predictus then UPSERTs the cache. UI shows a "Cached — fetched X
+      ago" or "Fresh" badge.
 
 What is **not** implemented yet (next iteration):
 
-- [ ] `predictus_cache` integration via `encrypt_payload`/`decrypt_payload` RPC
-      (currently every single search hits Predictus directly — schema is ready
-      but the Server Action does not consult the cache yet)
-- [ ] `predictus_token` persistence across Vercel cold starts (currently each
-      request creates a fresh client and re-authenticates)
 - [ ] Bulk upload UI + Server Action `createBulkJob`
 - [ ] Edge Function `process-bulk-job` body
 - [ ] Sign-out flow
 - [ ] Audit log viewer page (operator sees own audit trail)
+- [ ] Vault key bootstrap script (`predictus_cache_key`)
