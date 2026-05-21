@@ -12,6 +12,44 @@
 
 ---
 
+## Atualização — design system Radar PX (pós-commit `be9150d`)
+
+O commit `be9150d` aplicou o design system "Radar PX · KYC · KYB · KYE Check" e traduziu toda a UI para pt-BR. Padrões a seguir nas tasks de UI deste plano:
+
+**Page header padrão** (todas as páginas; aplicar em /search/person, /search/company, /admin/users, /admin/users/new, /admin/users/[id], /admin/audit):
+
+```tsx
+<header className="flex flex-col gap-2">
+  <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+    {EYEBROW}
+  </span>
+  <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+    {TITLE}
+  </h1>
+  <p className="text-muted-foreground">{DESCRIPTION}</p>
+</header>
+```
+
+**Main container**: `mx-auto flex w-full max-w-{3xl|4xl|5xl|6xl} flex-col gap-6 px-6 py-12` (form pages: 3xl; tables: 4xl/5xl; admin shell: 6xl; home: 5xl + py-14).
+
+**Estado vazio**: `<div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">…</div>`.
+
+**Badge**: o componente agora aceita `size="sm" | "default" | "lg"` e expandiu variants (`muted`, `info`, `success`, `warning`, `destructive`, `purple`, `dark-blue`, `outline`, `secondary`, `default`). Usar `size="sm"` em badges dentro de tabelas.
+
+**Page titles**: sufixo `— Radar PX` em todos os `metadata.title` (`'Buscar pessoa — Radar PX'`, `'Operadores — Radar PX'`, etc.). Páginas dentro de `/admin` podem usar sufixo `— Admin · Radar PX`.
+
+**AppHeader**: já tem visual definido (radar pill + "Radar PX" + KYC pílula + nav `rounded-full` com active state `bg-tertiary/60 text-primary`). A Task 12 abaixo **preserva o visual** e apenas adiciona props (`user`, `permissions`) com filtragem de itens.
+
+**Vendor name remediation**: o commit traduziu copy mas ainda há 3 ocorrências de "Predictus":
+- `app/layout.tsx:27` (description)
+- `app/(app)/page.tsx:99` (home copy) — substituída pela Task 22 (home redesign)
+- `app/(app)/search/page.tsx:18` (page copy) — substituída pela Task 13 (route split)
+- `app/(app)/search/search-client.tsx:187` (empty state copy) — substituída pela Task 13
+
+A Task 23 fica reduzida a (a) trocar a description em `app/layout.tsx` e (b) verificar com grep que nenhuma menção restou.
+
+---
+
 ## File map
 
 **Criados:**
@@ -23,7 +61,7 @@
 - `tests/helpers/fake-user.ts`
 - `app/(app)/search/person/page.tsx` + `actions.ts` + `search-client.tsx`
 - `app/(app)/search/company/page.tsx` + `actions.ts` + `search-client.tsx`
-- `app/(app)/home-empty-state.tsx` + `.stories.tsx`
+- `app/(app)/home-modules.tsx` + `.stories.tsx` (substitui o atual home embutido)
 - `app/admin/layout.tsx`
 - `app/admin/users/page.tsx`
 - `app/admin/users/new/page.tsx`
@@ -1253,7 +1291,7 @@ Expected: build typecheck passa (AppHeader vai precisar aceitar as novas props �
 - Modify: `components/app-header.tsx`
 - Modify: `components/app-header.stories.tsx`
 
-- [ ] **Step 1: Reescrever components/app-header.tsx para aceitar props**
+- [ ] **Step 1: Reescrever components/app-header.tsx — preserva visual Radar PX, adiciona props**
 
 ```tsx
 'use client';
@@ -1261,6 +1299,7 @@ Expected: build typecheck passa (AppHeader vai precisar aceitar as novas props �
 import { SignOutButton } from '@/components/sign-out-button';
 import type { AppUser, Service } from '@/lib/auth/permissions';
 import { cn } from '@/lib/utils';
+import { RadarIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -1281,11 +1320,12 @@ function NavLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+        'relative inline-flex h-9 items-center rounded-full px-3.5 text-[0.85rem] font-medium transition-colors',
         active
-          ? 'bg-muted text-foreground'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+          ? 'bg-tertiary/60 text-primary'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
       {label}
@@ -1310,25 +1350,40 @@ export function AppHeader({
   const permSet = new Set(permissions);
   const visible = NAV_ITEMS.filter((i) => isVisible(i, user, permSet));
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-6 px-6">
-        <Link href="/" className="flex items-baseline gap-2 font-semibold tracking-tight">
-          <span>PX Process Check</span>
-          <span className="hidden text-xs font-normal text-muted-foreground sm:inline">
-            interno
+    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-6">
+        <Link
+          href="/"
+          className="group flex items-center gap-2.5"
+          aria-label="Radar PX — página inicial"
+        >
+          <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-card transition-transform group-hover:-rotate-6">
+            <RadarIcon className="size-[18px]" strokeWidth={2.2} />
+          </span>
+          <span className="flex flex-col leading-tight">
+            <span className="font-heading text-[1.05rem] font-semibold tracking-tight text-foreground">
+              Radar <span className="text-primary">PX</span>
+            </span>
+            <span className="hidden text-[0.65rem] font-medium uppercase tracking-[0.18em] text-muted-foreground sm:inline">
+              KYC · KYB · KYE
+            </span>
           </span>
         </Link>
+
         <nav className="hidden items-center gap-1 md:flex" aria-label="Principal">
           {visible.map((item) => (
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>
+
         <SignOutButton />
       </div>
     </header>
   );
 }
 ```
+
+> **Variável**: `user` é prop dummy (não usado no JSX direto); fica reservado para futura badge "Admin" no header. Mantida na interface para a Task 11 não precisar mudar.
 
 - [ ] **Step 2: Atualizar `components/app-header.stories.tsx` completamente**
 
@@ -2167,8 +2222,13 @@ export const metadata = { title: 'Buscar empresa — Radar PX' };
 export default function CompanySearchPage() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-12">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Buscar empresa</h1>
+      <header className="flex flex-col gap-2">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+          Consulta individual
+        </span>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+          Buscar empresa
+        </h1>
         <p className="text-muted-foreground">
           Consulta processual por CNPJ. Resultados são guardados em cache por 30 dias.
         </p>
@@ -2405,9 +2465,14 @@ export default async function UsersListPage() {
 
   return (
     <main className="flex flex-col gap-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Operadores</h1>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+            Administração
+          </span>
+          <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+            Operadores
+          </h1>
           <p className="text-muted-foreground">Gestão de contas internas e suas permissões.</p>
         </div>
         <Button asChild>
@@ -2935,8 +3000,13 @@ export default function NewUserPage() {
 
   return (
     <main className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Novo operador</h1>
+      <header className="flex flex-col gap-2">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+          Administração · Operadores
+        </span>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+          Novo operador
+        </h1>
         <p className="text-muted-foreground">
           Crie a conta e defina a senha temporária. Repasse pelo canal seguro.
         </p>
@@ -3063,9 +3133,14 @@ export default async function EditUserPage({
         </div>
       )}
 
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Editar operador</h1>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+            Administração · Operadores
+          </span>
+          <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+            Editar operador
+          </h1>
           <p className="text-muted-foreground">{user.email}</p>
         </div>
         <form action={user.is_active ? deactivate : reactivate}>
@@ -3291,8 +3366,13 @@ export default async function AdminAuditPage() {
 
   return (
     <main className="flex flex-col gap-6">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Auditoria</h1>
+      <header className="flex flex-col gap-2">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+          Conformidade · LGPD
+        </span>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+          Auditoria
+        </h1>
         <p className="text-muted-foreground">
           Trilha global das ações dos operadores e do admin. Retenção de 30 dias.
         </p>
@@ -3379,134 +3459,267 @@ git commit -m "feat(admin): global audit page (pt-BR) replacing per-user /audit"
 
 ## Fase 6 — Home, polish, docs
 
-### Task 22: Home empty state para operador sem permissões
+### Task 22: Home permission-aware (preserva visual atual + empty state)
 
 **Files:**
-- Create: `app/(app)/home-empty-state.tsx`
-- Create: `app/(app)/home-empty-state.stories.tsx`
+- Create: `app/(app)/home-modules.tsx`
+- Create: `app/(app)/home-modules.stories.tsx`
 - Modify: `app/(app)/page.tsx`
 
-- [ ] **Step 1: Componente client**
+> **Contexto**: a home atual (commit `be9150d`) usa cards modulares (`PRIMARY` + `SECONDARY`) com radar pill, badges de domínio (KYC/Operação/30 dias/LGPD) e eyebrow uppercase. Esta task **preserva 100% desse visual** e só (a) filtra módulos por permissão, (b) substitui as rotas antigas pelas novas (`/search/person`, `/search/company`, `/admin/audit`), (c) adiciona empty state.
 
-`app/(app)/home-empty-state.tsx`:
+- [ ] **Step 1: Extrair `HomeModules` (client) com filtragem por permissão**
+
+`app/(app)/home-modules.tsx`:
 
 ```tsx
 'use client';
 
-import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Service } from '@/lib/auth/permissions';
+import {
+  ArrowRightIcon,
+  Building2Icon,
+  ClockIcon,
+  LayersIcon,
+  SearchIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 
-const SHORTCUT: Record<Service, { href: string; label: string; description: string }> = {
-  search_person: {
-    href: '/search/person',
-    label: 'Buscar pessoa',
-    description: 'Consulta por CPF ou nome.',
-  },
-  search_company: {
-    href: '/search/company',
-    label: 'Buscar empresa',
-    description: 'Consulta por CNPJ.',
-  },
-  search_bulk: {
-    href: '/bulk',
-    label: 'Buscar em lote',
-    description: 'CSV com até 250 documentos.',
-  },
+type DomainVariant = 'info' | 'success' | 'purple' | 'muted' | 'dark-blue';
+
+type Module = {
+  href: string;
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  domain: { label: string; variant: DomainVariant };
+  gate: Service | 'admin' | null; // null = sempre visível para qualquer ativo
 };
 
-export function HomeEmptyState({
-  permissions,
+const PRIMARY: Module[] = [
+  {
+    href: '/search/person',
+    title: 'Buscar pessoa',
+    description: 'Consulta processual por CPF ou nome.',
+    icon: SearchIcon,
+    domain: { label: 'KYC · KYE', variant: 'info' },
+    gate: 'search_person',
+  },
+  {
+    href: '/search/company',
+    title: 'Buscar empresa',
+    description: 'Consulta processual por CNPJ.',
+    icon: Building2Icon,
+    domain: { label: 'KYB', variant: 'dark-blue' },
+    gate: 'search_company',
+  },
+  {
+    href: '/bulk',
+    title: 'Busca em lote',
+    description: 'CSV com até 250 documentos por execução.',
+    icon: LayersIcon,
+    domain: { label: 'Operação', variant: 'purple' },
+    gate: 'search_bulk',
+  },
+];
+
+const SECONDARY: Module[] = [
+  {
+    href: '/history',
+    title: 'Histórico',
+    description: 'Suas últimas 100 consultas, com previews mascarados.',
+    icon: ClockIcon,
+    domain: { label: '30 dias', variant: 'muted' },
+    gate: null,
+  },
+  {
+    href: '/admin/users',
+    title: 'Operadores',
+    description: 'Criar, ativar e gerenciar permissões.',
+    icon: UsersIcon,
+    domain: { label: 'Admin', variant: 'info' },
+    gate: 'admin',
+  },
+  {
+    href: '/admin/audit',
+    title: 'Auditoria',
+    description: 'Trilha global de eventos, hashes SHA-256.',
+    icon: ShieldCheckIcon,
+    domain: { label: 'LGPD · Admin', variant: 'success' },
+    gate: 'admin',
+  },
+];
+
+function ModuleCard({ mod, primary }: { mod: Module; primary?: boolean }) {
+  const Icon = mod.icon;
+  return (
+    <Link href={mod.href} className="group">
+      <Card
+        className={
+          primary
+            ? 'h-full transition-all hover:-translate-y-0.5 hover:shadow-elevated'
+            : 'h-full transition-all hover:border-primary/30 hover:bg-card hover:shadow-elevated'
+        }
+      >
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <span
+              className={
+                primary
+                  ? 'grid size-11 place-items-center rounded-xl bg-primary text-primary-foreground shadow-card'
+                  : 'grid size-11 place-items-center rounded-xl bg-tertiary/60 text-primary'
+              }
+            >
+              <Icon className="size-[20px]" strokeWidth={2.1} />
+            </span>
+            <Badge variant={mod.domain.variant} size="sm">
+              {mod.domain.label}
+            </Badge>
+          </div>
+          <CardTitle className="mt-3">{mod.title}</CardTitle>
+          <CardDescription>{mod.description}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <span className="inline-flex items-center gap-1 text-sm font-medium text-primary transition-transform group-hover:translate-x-0.5">
+            Abrir
+            <ArrowRightIcon className="size-3.5" />
+          </span>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+function isVisible(mod: Module, role: 'admin' | 'operator', perms: ReadonlySet<Service>): boolean {
+  if (mod.gate === null) return true;
+  if (mod.gate === 'admin') return role === 'admin';
+  if (role === 'admin') return true;
+  return perms.has(mod.gate);
+}
+
+export function HomeModules({
   role,
+  permissions,
 }: {
-  permissions: readonly Service[];
   role: 'admin' | 'operator';
+  permissions: readonly Service[];
 }) {
-  if (role === 'operator' && permissions.length === 0) {
+  const permSet = new Set(permissions);
+  const visiblePrimary = PRIMARY.filter((m) => isVisible(m, role, permSet));
+  const visibleSecondary = SECONDARY.filter((m) => isVisible(m, role, permSet));
+
+  if (visiblePrimary.length === 0 && role === 'operator') {
     return (
       <Card>
-        <CardContent className="flex flex-col items-center py-12 text-center gap-2">
+        <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
           <p className="text-base font-medium">Sua conta está ativa.</p>
-          <p className="text-sm text-muted-foreground max-w-md">
+          <p className="max-w-md text-sm text-muted-foreground">
             Você ainda não tem nenhum serviço habilitado. Fale com um administrador para liberar
-            acesso a Buscar pessoa, Buscar empresa ou Buscar em lote.
+            Buscar pessoa, Buscar empresa ou Busca em lote.
           </p>
         </CardContent>
       </Card>
     );
   }
 
-  const visible: Service[] =
-    role === 'admin'
-      ? ['search_person', 'search_company', 'search_bulk']
-      : [...permissions];
-
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {visible.map((svc) => {
-        const s = SHORTCUT[svc];
-        return (
-          <Link key={svc} href={s.href}>
-            <Card className="hover:bg-muted/40 transition-colors">
-              <CardContent className="flex flex-col gap-1 p-6">
-                <p className="text-base font-medium">{s.label}</p>
-                <p className="text-sm text-muted-foreground">{s.description}</p>
-              </CardContent>
-            </Card>
-          </Link>
-        );
-      })}
-    </div>
+    <>
+      {visiblePrimary.length > 0 && (
+        <section aria-label="Módulos principais">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visiblePrimary.map((mod) => (
+              <ModuleCard key={mod.href} mod={mod} primary />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {visibleSecondary.length > 0 && (
+        <section aria-label="Auxiliares" className="flex flex-col gap-4">
+          <h2 className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            Apoio à operação
+          </h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleSecondary.map((mod) => (
+              <ModuleCard key={mod.href} mod={mod} />
+            ))}
+          </div>
+        </section>
+      )}
+    </>
   );
 }
 ```
 
 - [ ] **Step 2: Story**
 
-`app/(app)/home-empty-state.stories.tsx`:
+`app/(app)/home-modules.stories.tsx`:
 
 ```tsx
 import type { Meta, StoryObj } from '@storybook/nextjs';
-import { HomeEmptyState } from './home-empty-state';
+import { HomeModules } from './home-modules';
 
-const meta = { title: 'App/HomeEmptyState', component: HomeEmptyState } satisfies Meta<typeof HomeEmptyState>;
+const meta = { title: 'App/HomeModules', component: HomeModules } satisfies Meta<typeof HomeModules>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const WithoutPermissions: Story = { args: { permissions: [], role: 'operator' } };
-export const WithPersonOnly: Story = { args: { permissions: ['search_person'], role: 'operator' } };
-export const WithAll: Story = {
-  args: { permissions: ['search_person', 'search_company', 'search_bulk'], role: 'operator' },
+export const AsAdmin: Story = { args: { role: 'admin', permissions: [] } };
+
+export const AsOperatorWithAll: Story = {
+  args: { role: 'operator', permissions: ['search_person', 'search_company', 'search_bulk'] },
 };
-export const AsAdmin: Story = { args: { permissions: [], role: 'admin' } };
+
+export const AsOperatorWithPersonOnly: Story = {
+  args: { role: 'operator', permissions: ['search_person'] },
+};
+
+export const AsOperatorWithoutPermissions: Story = {
+  args: { role: 'operator', permissions: [] },
+};
 ```
 
 - [ ] **Step 3: Substituir `app/(app)/page.tsx`**
 
-Conteúdo completo:
-
 ```tsx
 import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
-import { HomeEmptyState } from './home-empty-state';
+import { HomeModules } from './home-modules';
 
 export const metadata = { title: 'Radar PX' };
 
 export default async function HomePage() {
   const user = await requireAuth();
   const permissions = await listUserPermissions(user.id);
+
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-12">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Olá, {user.display_name ?? user.email}
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-14">
+      <header className="flex flex-col gap-3">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+          PX Center · Compliance
+        </span>
+        <h1 className="font-heading text-4xl font-semibold tracking-tight text-foreground sm:text-[2.75rem]">
+          Background check sob radar.
         </h1>
-        <p className="text-muted-foreground">Escolha um serviço para começar.</p>
+        <p className="max-w-2xl text-base text-muted-foreground">
+          Consulte processos judiciais por CPF, CNPJ ou nome — com cache, auditoria e rate-limit já
+          integrados. Pensado para checagens de KYC, KYB e KYE.
+        </p>
       </header>
-      <HomeEmptyState permissions={[...permissions]} role={user.role} />
+
+      <HomeModules role={user.role} permissions={[...permissions]} />
+
+      <footer className="border-t border-border/60 pt-6 text-xs text-muted-foreground">
+        Dados retidos por 30 dias · CPF e CNPJ nunca persistidos em texto claro.
+      </footer>
     </main>
   );
 }
 ```
+
+> **Observação**: a copy do `<p>` removeu a menção a "via Predictus" do home atual.
 
 - [ ] **Step 4: Visual update + build**
 
@@ -3514,61 +3727,62 @@ export default async function HomePage() {
 pnpm test:visual:update && pnpm build
 ```
 
+Esperar: snapshots da home regerados (cards agora filtrados; rotas trocadas para `/search/person` etc.). Inspeção visual deve confirmar que o radar pill, eyebrow, font-heading e badges seguem idênticos.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/\(app\)/home-empty-state.tsx app/\(app\)/home-empty-state.stories.tsx app/\(app\)/page.tsx
-git commit -m "feat(home): permission-aware home + empty state (pt-BR)"
+git add app/\(app\)/home-modules.tsx app/\(app\)/home-modules.stories.tsx app/\(app\)/page.tsx
+git commit -m "feat(home): permission-aware modules + empty state (preserves design system)"
 ```
 
 ---
 
-### Task 23: Copy sweep — pt-BR e remoção de nomes de fornecedor
+### Task 23: Limpeza de menções a fornecedor
 
 **Files:**
-- Modify: vários (`app/(app)/bulk/**`, `app/(app)/history/**`, `app/(app)/search/person/**`, `app/(app)/access-denied/**`, etc.)
+- Modify: `app/layout.tsx`
 
-- [ ] **Step 1: Listar ocorrências de "Predictus" na UI**
+> **Contexto**: o commit `be9150d` já traduziu a UI para pt-BR. Tasks 13 (Person), 14 (Company) e 22 (Home) sobrescrevem os 3 arquivos com menção a "Predictus" (search/page.tsx, search/search-client.tsx, (app)/page.tsx). Resta apenas o `description` em `app/layout.tsx`.
 
-```bash
-grep -RIn --include="*.tsx" --include="*.ts" -E "Predictus|predictus" app/ components/ | grep -v ".test.ts" | grep -v "predictus_cache\|predictus_token\|predictus/" || echo "nenhuma"
+- [ ] **Step 1: Atualizar a description em `app/layout.tsx`**
+
+Localizar a linha equivalente a:
+
+```ts
+description: 'Radar PX — background check via Predictus. Internal PX Center tool.',
 ```
 
-> O grep deve ignorar nomes técnicos de tabela e diretórios `lib/predictus/`. Se aparecer alguma string em página/copy, substituir por "consulta", "serviço de consulta" ou "fonte de dados" conforme o contexto.
-
-- [ ] **Step 2: Trocar a única menção restante em copy fora dos arquivos da Fase 4**
-
-`app/layout.tsx` — linha equivalente a `description: 'Radar PX — background check via Predictus. Internal PX Center tool.'`. Substituir por:
+Substituir por:
 
 ```ts
 description: 'Radar PX — verificação interna do PX Center.',
 ```
 
-- [ ] **Step 3: Inventário de copy em inglês (executar e remediar)**
-
-Rodar o comando abaixo e, para cada arquivo listado, traduzir as strings exibidas ao operador para pt-BR. Strings de código (logs `console.warn`, comentários, mensagens lançadas internamente que nunca chegam ao operador) ficam em inglês — não traduzir.
+- [ ] **Step 2: Verificar que nenhuma menção restou**
 
 ```bash
-grep -RIn --include="*.tsx" --include="*.ts" -E '"[A-Z][a-z]{2,}.*"|\047[A-Z][a-z]{2,}.*\047' \
-  app/\(app\)/bulk \
-  app/\(app\)/history \
-  app/login \
-  app/access-denied \
-  components/sign-out-button.tsx
+grep -RIn --include="*.tsx" --include="*.ts" -E "Predictus|predictus" app/ components/ \
+  | grep -v ".test.ts" \
+  | grep -v "predictus_cache\|predictus_token\|predictus/types\|predictus/server-client\|predictus/cache" \
+  | grep -v "PredictusProcess\|createServerPredictusClient" \
+  || echo "OK — nenhuma menção visível ao operador."
 ```
 
-Arquivos esperados (lista guia, ajustar conforme o repo):
+> Resultados esperados que **devem permanecer** (são nomes técnicos internos, não UI):
+> - imports de `@/lib/predictus/*`
+> - tipos `PredictusProcess`
+> - função `createServerPredictusClient`
+> - tabelas `predictus_cache`, `predictus_token`
 
-- `app/(app)/bulk/page.tsx` — header, descrições
-- `app/(app)/bulk/upload-form.tsx` — labels, mensagens de erro
-- `app/(app)/bulk/[jobId]/page.tsx` — header, badges de status
-- `app/(app)/bulk/[jobId]/job-progress.tsx` — labels de status
-- `app/(app)/history/page.tsx` — header e estados vazios
-- `app/login/page.tsx` + form — labels, mensagens de erro
-- `app/access-denied/page.tsx` — mensagem; revisar para garantir copy genérica
-- `components/sign-out-button.tsx` — label "Sair"
+Se aparecer qualquer outra menção (string em JSX, mensagem de erro ao operador, copy), substituir por "consulta", "serviço de consulta" ou "fonte de dados".
 
-> **Importante**: o nome "Radar PX" é o nome interno do produto (não fornecedor) — mantém-se. A regra do "sem fornecedor" cobre "Predictus" e similares.
+- [ ] **Step 3: Commit**
+
+```bash
+git add app/layout.tsx
+git commit -m "chore(ui): remove vendor name from meta description"
+```
 
 - [ ] **Step 3: Visual update + build**
 
