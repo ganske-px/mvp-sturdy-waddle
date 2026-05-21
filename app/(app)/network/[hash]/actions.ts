@@ -4,6 +4,8 @@ import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
 import { decryptLabel } from '@/lib/graph/label-crypto';
 import type { EdgeKind, GraphNodeLabel, NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
+import { setCachedResults } from '@/lib/predictus/cache';
+import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { headers } from 'next/headers';
@@ -165,4 +167,77 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
       lastSeenAt: e.last_seen_at,
     })),
   };
+}
+
+export async function expandNode(
+  hash: string,
+): Promise<{ subgraph: SubgraphDto; usedPredictus: boolean }> {
+  const user = await requirePermission('search_network');
+  const admin = createAdminClient();
+  const supabase = await createClient();
+
+  const { data: row } = await supabase
+    .from('graph_nodes')
+    .select('node_hash, node_type, encrypted_label')
+    .eq('node_hash', hash)
+    .maybeSingle()
+    .returns<{ node_hash: string; node_type: NodeType; encrypted_label: string }>();
+
+  if (!row) {
+    const subgraph = await getSubgraph(hash);
+    return { subgraph, usedPredictus: false };
+  }
+
+  // Lawyers cannot be expanded online: Predictus has no search-by-OAB endpoint.
+  if (row.node_type === 'lawyer') {
+    const subgraph = await getSubgraph(hash);
+    return { subgraph, usedPredictus: false };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { data: cacheRow } = await supabase
+    .from('predictus_cache')
+    .select('document_hash')
+    .eq('document_hash', hash)
+    .gt('expires_at', nowIso)
+    .maybeSingle()
+    .returns<{ document_hash: string }>();
+
+  if (cacheRow) {
+    const subgraph = await getSubgraph(hash);
+    return { subgraph, usedPredictus: false };
+  }
+
+  // Need to call Predictus: decrypt the label to recover the raw document.
+  const plaintext = await decryptLabel(admin, row.encrypted_label);
+  const label = JSON.parse(plaintext) as GraphNodeLabel;
+  if (!label.document) {
+    const subgraph = await getSubgraph(hash);
+    return { subgraph, usedPredictus: false };
+  }
+
+  const requestContext = extractRequestContext(await headers());
+  await writeAuditLog(
+    {
+      userId: user.id,
+      action: 'expand_network_node',
+      documentHash: hash,
+      metadata: { used_predictus: true, expanded_hash: hash },
+      ip: requestContext.ip,
+      userAgent: requestContext.userAgent,
+    },
+    admin,
+    { allowFailure: true },
+  );
+
+  const client = await createServerPredictusClient();
+  const results =
+    row.node_type === 'cpf'
+      ? await client.searchByCpf(label.document)
+      : await client.searchByCnpj(label.document);
+
+  await setCachedResults(admin, hash, row.node_type, results);
+
+  const subgraph = await getSubgraph(hash);
+  return { subgraph, usedPredictus: true };
 }
