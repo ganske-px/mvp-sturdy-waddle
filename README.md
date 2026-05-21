@@ -59,7 +59,7 @@ Password requirements: 12+ chars, mixed case, digits, symbols.
 - `pg_cron` runs daily at 03:00 UTC:
   - `audit_log` and expired `predictus_cache` rows purged after **30 days**
   - Completed/failed `bulk_jobs` purged after **7 days** (they hold encrypted documents)
-- Audit log captures `user_id`, `action`, `document_hash`, `ip`, `user_agent` and `metadata` (jsonb). Operators read their own audit history; writes happen only via the service-role key.
+- Audit log captures `user_id`, `action`, `document_hash`, `ip`, `user_agent` and `metadata` (jsonb). Operators read their own audit history; writes happen only via the secret key (`SUPABASE_SECRET_KEY`, formerly `SUPABASE_SERVICE_ROLE_KEY`).
 
 ## Local setup
 
@@ -77,7 +77,7 @@ Requires Docker.
 pnpm exec supabase start
 ```
 
-The first run downloads container images and applies the migrations under `supabase/migrations/`. It prints `API URL`, `anon key` and `service_role key` — copy those into `.env.local`:
+The first run downloads container images and applies the migrations under `supabase/migrations/`. It prints `API URL`, `publishable key` and `secret key` — copy those into `.env.local`:
 
 ```bash
 cp .env.local.example .env.local

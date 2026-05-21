@@ -6,7 +6,7 @@ import type { Database } from './types';
 // runs server-side under operator authority (Server Actions, Route Handlers,
 // Edge Functions). Never expose this client to the browser.
 export function createAdminClient() {
-  return createSupabaseClient<Database>(supabaseEnv.url(), supabaseEnv.serviceRoleKey(), {
+  return createSupabaseClient<Database>(supabaseEnv.url(), supabaseEnv.secretKey(), {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

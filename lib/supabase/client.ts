@@ -3,5 +3,5 @@ import { supabaseEnv } from './env';
 import type { Database } from './types';
 
 export function createClient() {
-  return createBrowserClient<Database>(supabaseEnv.url(), supabaseEnv.anonKey());
+  return createBrowserClient<Database>(supabaseEnv.url(), supabaseEnv.publishableKey());
 }

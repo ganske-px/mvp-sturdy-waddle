@@ -88,8 +88,8 @@ export async function createBulkJobAction(
 
 async function invokeProcessBulkJob(jobId: string): Promise<void> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey) {
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+  if (!supabaseUrl || !secretKey) {
     console.error('Cannot invoke process-bulk-job: SUPABASE env vars missing.');
     return;
   }
@@ -98,7 +98,7 @@ async function invokeProcessBulkJob(jobId: string): Promise<void> {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        Authorization: `Bearer ${serviceKey}`,
+        Authorization: `Bearer ${secretKey}`,
       },
       body: JSON.stringify({ jobId }),
     });

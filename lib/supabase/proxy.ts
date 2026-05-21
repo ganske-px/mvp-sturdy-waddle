@@ -8,7 +8,7 @@ const PUBLIC_PATHS = ['/login', '/auth', '/access-denied'];
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient<Database>(supabaseEnv.url(), supabaseEnv.anonKey(), {
+  const supabase = createServerClient<Database>(supabaseEnv.url(), supabaseEnv.publishableKey(), {
     cookies: {
       getAll() {
         return request.cookies.getAll();

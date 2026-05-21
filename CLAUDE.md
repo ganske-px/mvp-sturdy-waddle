@@ -207,7 +207,7 @@ pnpm lint:fix                # biome check --write (safe fixes)
 pnpm format                  # biome format --write
 
 pnpm exec supabase start     # local Postgres + Studio + Auth + Storage
-pnpm exec supabase status    # prints anon key, service role, db url
+pnpm exec supabase status    # prints publishable key, secret key, db url
 pnpm exec supabase db reset  # destroys and re-applies all migrations
 pnpm exec supabase db push   # apply pending migrations to the linked project
 pnpm exec supabase functions deploy process-bulk-job
