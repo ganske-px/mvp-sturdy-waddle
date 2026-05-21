@@ -1,16 +1,21 @@
 'use client';
 
 import { SignOutButton } from '@/components/sign-out-button';
+import type { AppUser, Service } from '@/lib/auth/permissions';
 import { cn } from '@/lib/utils';
 import { RadarIcon } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const NAV_ITEMS = [
-  { href: '/search', label: 'Buscar' },
-  { href: '/bulk', label: 'Lote' },
+type NavItem = { href: string; label: string; gate?: Service | 'admin' };
+
+const NAV_ITEMS: readonly NavItem[] = [
+  { href: '/search/person', label: 'Pessoa', gate: 'search_person' },
+  { href: '/search/company', label: 'Empresa', gate: 'search_company' },
+  { href: '/bulk', label: 'Lote', gate: 'search_bulk' },
   { href: '/history', label: 'Histórico' },
-  { href: '/audit', label: 'Auditoria' },
+  { href: '/admin/users', label: 'Operadores', gate: 'admin' },
+  { href: '/admin/audit', label: 'Auditoria', gate: 'admin' },
 ] as const;
 
 function NavLink({ href, label }: { href: string; label: string }) {
@@ -32,7 +37,22 @@ function NavLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function AppHeader() {
+function isVisible(item: NavItem, user: AppUser, permissions: ReadonlySet<Service>): boolean {
+  if (!item.gate) return true;
+  if (item.gate === 'admin') return user.role === 'admin';
+  if (user.role === 'admin') return true;
+  return permissions.has(item.gate);
+}
+
+export function AppHeader({
+  user,
+  permissions,
+}: {
+  user: AppUser;
+  permissions: readonly Service[];
+}) {
+  const permSet = new Set(permissions);
+  const visible = NAV_ITEMS.filter((i) => isVisible(i, user, permSet));
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-6 px-6">
@@ -55,7 +75,7 @@ export function AppHeader() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex" aria-label="Principal">
-          {NAV_ITEMS.map((item) => (
+          {visible.map((item) => (
             <NavLink key={item.href} href={item.href} label={item.label} />
           ))}
         </nav>

@@ -1,10 +1,13 @@
 import { AppHeader } from '@/components/app-header';
+import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const user = await requireAuth();
+  const permissions = await listUserPermissions(user.id);
   return (
-    <div className="radar-surface min-h-screen flex flex-col">
-      <AppHeader />
-      <div className="flex-1">{children}</div>
-    </div>
+    <>
+      <AppHeader user={user} permissions={[...permissions]} />
+      {children}
+    </>
   );
 }

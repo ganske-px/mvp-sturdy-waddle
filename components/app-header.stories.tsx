@@ -1,5 +1,24 @@
 import type { Meta, StoryObj } from '@storybook/nextjs';
+import type { AppUser, Service } from '@/lib/auth/permissions';
 import { AppHeader } from './app-header';
+
+const admin: AppUser = {
+  id: 'admin-1',
+  email: 'admin@example.com',
+  display_name: 'Admin',
+  role: 'admin',
+  is_active: true,
+};
+
+const operator: AppUser = {
+  id: 'op-1',
+  email: 'op@example.com',
+  display_name: 'Operadora',
+  role: 'operator',
+  is_active: true,
+};
+
+const ALL_PERMS: readonly Service[] = ['search_person', 'search_company', 'search_bulk'];
 
 const meta = {
   title: 'App/AppHeader',
@@ -8,7 +27,7 @@ const meta = {
     layout: 'fullscreen',
     nextjs: {
       appDirectory: true,
-      navigation: { pathname: '/search' },
+      navigation: { pathname: '/search/person' },
     },
   },
   decorators: [
@@ -23,29 +42,33 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const SearchActive: Story = {
-  parameters: { nextjs: { appDirectory: true, navigation: { pathname: '/search' } } },
+export const AsAdmin: Story = {
+  args: { user: admin, permissions: [] },
 };
 
-export const BulkActive: Story = {
-  parameters: { nextjs: { appDirectory: true, navigation: { pathname: '/bulk' } } },
+export const AsOperatorWithAll: Story = {
+  args: { user: operator, permissions: ALL_PERMS },
 };
 
-export const HistoryActive: Story = {
-  parameters: { nextjs: { appDirectory: true, navigation: { pathname: '/history' } } },
+export const AsOperatorWithPersonOnly: Story = {
+  args: { user: operator, permissions: ['search_person'] },
 };
 
-export const AuditActive: Story = {
-  parameters: { nextjs: { appDirectory: true, navigation: { pathname: '/audit' } } },
+export const AsOperatorWithoutPermissions: Story = {
+  args: { user: operator, permissions: [] },
 };
 
-export const NestedActiveRoute: Story = {
-  name: 'Bulk job detail (active = Bulk)',
+export const CompanyActive: Story = {
+  args: { user: operator, permissions: ALL_PERMS },
   parameters: {
-    nextjs: { appDirectory: true, navigation: { pathname: '/bulk/abc-123' } },
+    nextjs: { appDirectory: true, navigation: { pathname: '/search/company' } },
   },
 };
 
-export const Home: Story = {
-  parameters: { nextjs: { appDirectory: true, navigation: { pathname: '/' } } },
+export const BulkJobDetail: Story = {
+  name: 'Bulk job detail (active = Lote)',
+  args: { user: operator, permissions: ALL_PERMS },
+  parameters: {
+    nextjs: { appDirectory: true, navigation: { pathname: '/bulk/abc-123' } },
+  },
 };
