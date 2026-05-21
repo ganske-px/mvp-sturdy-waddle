@@ -6,10 +6,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
 import {
-  AlertCircleIcon, CheckCircle2Icon, ClockIcon, SearchIcon, SparklesIcon,
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  ClockIcon,
+  SearchIcon,
+  SparklesIcon,
 } from 'lucide-react';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -69,7 +78,10 @@ function SubmitButton() {
 
 export function PersonSearchClient() {
   const [type, setType] = useState<PersonSearchType>('cpf');
-  const [state, formAction] = useActionState<SearchPersonResult | null, FormData>(submitAction, null);
+  const [state, formAction] = useActionState<SearchPersonResult | null, FormData>(
+    submitAction,
+    null,
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -115,13 +127,18 @@ export function PersonSearchClient() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="q">Termo</Label>
               <Input
-                id="q" name="q" placeholder={PLACEHOLDERS[type]}
-                autoComplete="off" required
+                id="q"
+                name="q"
+                placeholder={PLACEHOLDERS[type]}
+                autoComplete="off"
+                required
                 className={type === 'name' ? '' : 'font-mono tracking-tight'}
               />
             </div>
 
-            <div className="flex justify-end"><SubmitButton /></div>
+            <div className="flex justify-end">
+              <SubmitButton />
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -145,11 +162,13 @@ export function PersonSearchClient() {
               {state.ok ? (
                 state.cached ? (
                   <Badge variant="info">
-                    <ClockIcon />Em cache · {timeAgo(state.fetchedAt)}
+                    <ClockIcon />
+                    Em cache · {timeAgo(state.fetchedAt)}
                   </Badge>
                 ) : (
                   <Badge variant="success">
-                    <SparklesIcon />Resultado fresco
+                    <SparklesIcon />
+                    Resultado fresco
                   </Badge>
                 )
               ) : null}

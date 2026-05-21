@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs';
-import { AuditTable, type AuditRow } from './audit-table';
+import { type AuditRow, AuditTable } from './audit-table';
 
 const sample: AuditRow[] = [
   {

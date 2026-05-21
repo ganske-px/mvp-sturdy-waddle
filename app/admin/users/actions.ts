@@ -6,9 +6,7 @@ import { type Service, requireAdmin } from '@/lib/auth/permissions';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { revalidatePath } from 'next/cache';
 
-export type ActionResult<T = void> =
-  | { ok: true; data?: T }
-  | { ok: false; error: string };
+export type ActionResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
 
 export type CreateUserInput = {
   email: string;
@@ -64,10 +62,7 @@ export async function createUser(
   return { ok: true, data: { userId: newUserId } };
 }
 
-export async function setUserActive(
-  userId: string,
-  active: boolean,
-): Promise<ActionResult> {
+export async function setUserActive(userId: string, active: boolean): Promise<ActionResult> {
   const me = await requireAdmin();
   try {
     assertNotSelf(me.id, userId, 'deactivate');

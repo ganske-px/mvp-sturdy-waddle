@@ -2,11 +2,7 @@ import { Button } from '@/components/ui/button';
 import { ALL_SERVICES, type Service, requireAdmin } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import { notFound, redirect } from 'next/navigation';
-import {
-  setUserActive,
-  setUserPermission,
-  setUserRole,
-} from '../actions';
+import { setUserActive, setUserPermission, setUserRole } from '../actions';
 import { UserForm, type UserFormValues } from '../user-form';
 
 export const metadata = { title: 'Editar operador — Admin · Radar PX' };
@@ -91,7 +87,8 @@ export default async function EditUserPage({
     <main className="flex flex-col gap-6">
       {sp.created === '1' && (
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
-          Operador criado. A senha temporária foi exibida na tela anterior — repasse pelo canal seguro.
+          Operador criado. A senha temporária foi exibida na tela anterior — repasse pelo canal
+          seguro.
         </div>
       )}
 

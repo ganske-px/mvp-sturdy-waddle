@@ -19,7 +19,11 @@ export type UserFormValues = {
 
 // Inlined here (instead of importing from `@/lib/auth/permissions`) because that
 // module is `server-only`; client components can only safely consume its types.
-const ALL_SERVICES: readonly Service[] = ['search_person', 'search_company', 'search_bulk'] as const;
+const ALL_SERVICES: readonly Service[] = [
+  'search_person',
+  'search_company',
+  'search_bulk',
+] as const;
 
 const SERVICE_LABEL: Record<Service, string> = {
   search_person: 'Buscar pessoa (CPF e nome)',
@@ -36,7 +40,7 @@ export function UserForm({
   mode: UserFormMode;
   initial: UserFormValues;
   isLastActiveAdmin?: boolean;
-  onSubmit: (values: UserFormValues) => Promise<{ ok: false; error: string } | void>;
+  onSubmit: (values: UserFormValues) => Promise<{ ok: false; error: string } | undefined>;
 }) {
   const [values, setValues] = useState<UserFormValues>(initial);
   const [error, setError] = useState<string | null>(null);
@@ -120,8 +124,8 @@ export function UserForm({
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium">Papel</label>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-sm font-medium">Papel</legend>
         <div className="flex gap-4 text-sm">
           {(['operator', 'admin'] as const).map((r) => (
             <label key={r} className="flex items-center gap-2">
@@ -147,7 +151,7 @@ export function UserForm({
             Este é o único admin ativo — não pode ser rebaixado.
           </p>
         )}
-      </div>
+      </fieldset>
 
       <fieldset className="flex flex-col gap-2" disabled={values.role === 'admin'}>
         <legend className="text-sm font-medium">Permissões de serviço</legend>

@@ -8,7 +8,11 @@ import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import type { PredictusProcess } from '@/lib/predictus/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { format as formatCnpj, isValid as isCnpjValid, mask as maskCnpj } from '@/lib/validators/cnpj';
+import {
+  format as formatCnpj,
+  isValid as isCnpjValid,
+  mask as maskCnpj,
+} from '@/lib/validators/cnpj';
 import { headers } from 'next/headers';
 
 export type SearchByCnpjInput = { rawInput: string };

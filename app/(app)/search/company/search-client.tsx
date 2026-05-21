@@ -6,10 +6,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
 import {
-  AlertCircleIcon, CheckCircle2Icon, ClockIcon, SearchIcon, SparklesIcon,
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  ClockIcon,
+  SearchIcon,
+  SparklesIcon,
 } from 'lucide-react';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -51,7 +60,10 @@ function SubmitButton() {
 }
 
 export function CompanySearchClient() {
-  const [state, formAction] = useActionState<SearchByCnpjResult | null, FormData>(submitAction, null);
+  const [state, formAction] = useActionState<SearchByCnpjResult | null, FormData>(
+    submitAction,
+    null,
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -65,12 +77,17 @@ export function CompanySearchClient() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="q">CNPJ</Label>
               <Input
-                id="q" name="q" placeholder="12.345.678/0001-99"
-                autoComplete="off" required
+                id="q"
+                name="q"
+                placeholder="12.345.678/0001-99"
+                autoComplete="off"
+                required
                 className="font-mono tracking-tight"
               />
             </div>
-            <div className="flex justify-end"><SubmitButton /></div>
+            <div className="flex justify-end">
+              <SubmitButton />
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -93,9 +110,15 @@ export function CompanySearchClient() {
               </div>
               {state.ok ? (
                 state.cached ? (
-                  <Badge variant="info"><ClockIcon />Em cache · {timeAgo(state.fetchedAt)}</Badge>
+                  <Badge variant="info">
+                    <ClockIcon />
+                    Em cache · {timeAgo(state.fetchedAt)}
+                  </Badge>
                 ) : (
-                  <Badge variant="success"><SparklesIcon />Resultado fresco</Badge>
+                  <Badge variant="success">
+                    <SparklesIcon />
+                    Resultado fresco
+                  </Badge>
                 )
               ) : null}
             </div>
@@ -123,10 +146,16 @@ export function CompanySearchClient() {
                   <TableBody>
                     {state.results.map((p, i) => (
                       <TableRow key={p.numeroProcessoUnico ?? `idx-${i}`}>
-                        <TableCell className="font-mono text-xs">{p.numeroProcessoUnico ?? '—'}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {p.numeroProcessoUnico ?? '—'}
+                        </TableCell>
                         <TableCell className="text-sm">{p.tribunal ?? '—'}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{p.classeProcessual ?? '—'}</TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">{formatBRL(p.valorCausa?.valor)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {p.classeProcessual ?? '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {formatBRL(p.valorCausa?.valor)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

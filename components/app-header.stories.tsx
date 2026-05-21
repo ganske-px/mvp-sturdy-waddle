@@ -1,5 +1,5 @@
-import type { Meta, StoryObj } from '@storybook/nextjs';
 import type { AppUser, Service } from '@/lib/auth/permissions';
+import type { Meta, StoryObj } from '@storybook/nextjs';
 import { AppHeader } from './app-header';
 
 const admin: AppUser = {

@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/server';
-import { AuditTable, type AuditAction, type AuditRow } from './audit-table';
+import { type AuditAction, type AuditRow, AuditTable } from './audit-table';
 
 export const metadata = { title: 'Auditoria — Admin · Radar PX' };
 

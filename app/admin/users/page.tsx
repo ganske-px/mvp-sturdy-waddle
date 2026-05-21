@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { type Service, requireAdmin } from '@/lib/auth/permissions';
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { UsersTable, type UserRow } from './users-table';
+import { type UserRow, UsersTable } from './users-table';
 
 export const metadata = { title: 'Operadores — Admin · Radar PX' };
 

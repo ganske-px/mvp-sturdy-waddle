@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs';
-import { UsersTable, type UserRow } from './users-table';
+import { type UserRow, UsersTable } from './users-table';
 
 const rows: UserRow[] = [
   {
