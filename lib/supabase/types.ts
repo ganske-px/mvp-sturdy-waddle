@@ -184,19 +184,19 @@ export type Database = {
       user_service_permissions: {
         Row: {
           user_id: string;
-          service: 'search_person' | 'search_company' | 'search_bulk';
+          service: 'search_person' | 'search_company' | 'search_bulk' | 'search_network';
           granted_at: string;
           granted_by: string | null;
         };
         Insert: {
           user_id: string;
-          service: 'search_person' | 'search_company' | 'search_bulk';
+          service: 'search_person' | 'search_company' | 'search_bulk' | 'search_network';
           granted_at?: string;
           granted_by?: string | null;
         };
         Update: {
           user_id?: string;
-          service?: 'search_person' | 'search_company' | 'search_bulk';
+          service?: 'search_person' | 'search_company' | 'search_bulk' | 'search_network';
           granted_at?: string;
           granted_by?: string | null;
         };
@@ -215,7 +215,9 @@ export type Database = {
             | 'admin_user_created'
             | 'admin_user_set_active'
             | 'admin_user_set_role'
-            | 'admin_user_permission_changed';
+            | 'admin_user_permission_changed'
+            | 'view_network'
+            | 'expand_network_node';
           search_type: 'cpf' | 'cnpj' | 'name' | null;
           document_hash: string | null;
           result_count: number | null;
@@ -237,7 +239,9 @@ export type Database = {
             | 'admin_user_created'
             | 'admin_user_set_active'
             | 'admin_user_set_role'
-            | 'admin_user_permission_changed';
+            | 'admin_user_permission_changed'
+            | 'view_network'
+            | 'expand_network_node';
           search_type?: 'cpf' | 'cnpj' | 'name' | null;
           document_hash?: string | null;
           result_count?: number | null;
@@ -259,7 +263,9 @@ export type Database = {
             | 'admin_user_created'
             | 'admin_user_set_active'
             | 'admin_user_set_role'
-            | 'admin_user_permission_changed';
+            | 'admin_user_permission_changed'
+            | 'view_network'
+            | 'expand_network_node';
           search_type?: 'cpf' | 'cnpj' | 'name' | null;
           document_hash?: string | null;
           result_count?: number | null;
@@ -267,6 +273,61 @@ export type Database = {
           user_agent?: string | null;
           metadata?: Record<string, unknown> | null;
           created_at?: string;
+        };
+      };
+      graph_nodes: {
+        Row: {
+          node_hash: string;
+          node_type: 'cpf' | 'cnpj' | 'lawyer';
+          encrypted_label: string;
+          masked_preview: string;
+          first_seen_at: string;
+          last_seen_at: string;
+        };
+        Insert: {
+          node_hash: string;
+          node_type: 'cpf' | 'cnpj' | 'lawyer';
+          encrypted_label: string;
+          masked_preview: string;
+          first_seen_at?: string;
+          last_seen_at?: string;
+        };
+        Update: {
+          node_hash?: string;
+          node_type?: 'cpf' | 'cnpj' | 'lawyer';
+          encrypted_label?: string;
+          masked_preview?: string;
+          first_seen_at?: string;
+          last_seen_at?: string;
+        };
+      };
+      graph_edges: {
+        Row: {
+          id: string;
+          source_hash: string;
+          target_hash: string;
+          kind: 'co_party' | 'client_lawyer' | 'lawyer_lawyer';
+          evidence: Record<string, unknown>;
+          first_seen_at: string;
+          last_seen_at: string;
+        };
+        Insert: {
+          id?: string;
+          source_hash: string;
+          target_hash: string;
+          kind: 'co_party' | 'client_lawyer' | 'lawyer_lawyer';
+          evidence?: Record<string, unknown>;
+          first_seen_at?: string;
+          last_seen_at?: string;
+        };
+        Update: {
+          id?: string;
+          source_hash?: string;
+          target_hash?: string;
+          kind?: 'co_party' | 'client_lawyer' | 'lawyer_lawyer';
+          evidence?: Record<string, unknown>;
+          first_seen_at?: string;
+          last_seen_at?: string;
         };
       };
     };
@@ -278,6 +339,18 @@ export type Database = {
       has_service_permission: {
         Args: { uid: string; svc: string };
         Returns: boolean;
+      };
+      encrypt_graph_label: {
+        Args: { plaintext: string };
+        Returns: string;
+      };
+      decrypt_graph_label: {
+        Args: { ciphertext: string };
+        Returns: string;
+      };
+      upsert_graph: {
+        Args: { nodes_in: unknown; edges_in: unknown };
+        Returns: undefined;
       };
     };
   };
