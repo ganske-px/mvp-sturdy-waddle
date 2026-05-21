@@ -114,6 +114,37 @@ describe('writeAuditLog — happy paths', () => {
       metadata: { reason: 'invalid_credentials' },
     });
   });
+
+  it('accepts the new admin_user_created action', async () => {
+    const { client, insertCalls } = buildFakeClient();
+    await writeAuditLog(
+      {
+        userId: 'admin-1',
+        action: 'admin_user_created',
+        metadata: { target_email: 'new@example.com', role: 'operator' },
+      },
+      client as never,
+    );
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]).toMatchObject({
+      user_id: 'admin-1',
+      action: 'admin_user_created',
+      metadata: { target_email: 'new@example.com', role: 'operator' },
+    });
+  });
+
+  it('accepts admin_user_set_active / set_role / permission_changed', async () => {
+    const { client, insertCalls } = buildFakeClient();
+    const actions = [
+      'admin_user_set_active',
+      'admin_user_set_role',
+      'admin_user_permission_changed',
+    ] as const;
+    for (const action of actions) {
+      await writeAuditLog({ userId: 'admin-1', action }, client as never);
+    }
+    expect(insertCalls.map((r) => r.action)).toEqual([...actions]);
+  });
 });
 
 describe('writeAuditLog — error handling', () => {
