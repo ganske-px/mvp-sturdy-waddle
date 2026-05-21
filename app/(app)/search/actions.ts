@@ -1,6 +1,7 @@
 'use server';
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
+import { requirePermission, type Service } from '@/lib/auth/permissions';
 import { hashDocument } from '@/lib/hash';
 import { getCachedResults, setCachedResults } from '@/lib/predictus/cache';
 import { createServerPredictusClient } from '@/lib/predictus/server-client';
@@ -47,6 +48,11 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
   if (!user) {
     return { ok: false, error: 'Not authenticated.' };
   }
+
+  const requiredService: Service =
+    input.type === 'cnpj' ? 'search_company' : 'search_person';
+  // person covers both 'cpf' and 'name' searches per the spec.
+  await requirePermission(requiredService);
 
   // Validate + normalize per type
   const trimmed = input.rawInput.trim();
