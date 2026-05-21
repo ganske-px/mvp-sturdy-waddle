@@ -1,5 +1,6 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import {
   Table,
@@ -30,11 +31,20 @@ type ItemRow = {
   error_message: string | null;
 };
 
+type BadgeVariant = 'muted' | 'info' | 'success' | 'warning' | 'destructive';
+
 const STATUS_LABELS: Record<JobRow['status'], string> = {
   pending: 'Pending',
   running: 'Running',
   completed: 'Completed',
   failed: 'Failed',
+};
+
+const STATUS_VARIANTS: Record<JobRow['status'], BadgeVariant> = {
+  pending: 'muted',
+  running: 'info',
+  completed: 'success',
+  failed: 'destructive',
 };
 
 const ITEM_STATUS_LABELS: Record<ItemRow['status'], string> = {
@@ -43,6 +53,21 @@ const ITEM_STATUS_LABELS: Record<ItemRow['status'], string> = {
   found: 'Processes found',
   clean: 'Clean',
   error: 'Error',
+};
+
+const ITEM_STATUS_VARIANTS: Record<ItemRow['status'], BadgeVariant> = {
+  pending: 'muted',
+  processing: 'info',
+  found: 'warning',
+  clean: 'success',
+  error: 'destructive',
+};
+
+const PROGRESS_INDICATOR_CLASSES: Record<JobRow['status'], string> = {
+  pending: '[&_[data-slot=progress-indicator]]:bg-primary',
+  running: '[&_[data-slot=progress-indicator]]:bg-primary',
+  completed: '[&_[data-slot=progress-indicator]]:bg-emerald-500',
+  failed: '[&_[data-slot=progress-indicator]]:bg-destructive',
 };
 
 export function JobProgress({
@@ -89,13 +114,16 @@ export function JobProgress({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-baseline justify-between">
-        <p className="text-sm font-medium">
-          {STATUS_LABELS[job.status]} — {completedCount} of {job.total_items}
-          {job.error_items > 0 ? ` (${job.error_items} errors)` : ''}
-        </p>
+        <div className="flex items-center gap-2 text-sm">
+          <Badge variant={STATUS_VARIANTS[job.status]}>{STATUS_LABELS[job.status]}</Badge>
+          <span className="font-medium">
+            {completedCount} of {job.total_items}
+            {job.error_items > 0 ? ` (${job.error_items} errors)` : ''}
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">{percent}%</p>
       </div>
-      <Progress value={percent} />
+      <Progress value={percent} className={PROGRESS_INDICATOR_CLASSES[job.status]} />
 
       {job.error_message ? (
         <p role="alert" className="text-sm text-destructive">
@@ -118,9 +146,11 @@ export function JobProgress({
               <TableCell className="font-mono text-xs">{it.document_preview}</TableCell>
               <TableCell className="uppercase">{it.document_type}</TableCell>
               <TableCell>
-                {ITEM_STATUS_LABELS[it.status]}
+                <Badge variant={ITEM_STATUS_VARIANTS[it.status]}>
+                  {ITEM_STATUS_LABELS[it.status]}
+                </Badge>
                 {it.error_message ? (
-                  <span className="ml-2 text-destructive text-xs">— {it.error_message}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">— {it.error_message}</span>
                 ) : null}
               </TableCell>
               <TableCell className="text-right">

@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { type CreateBulkJobState, createBulkJobAction } from './actions';
@@ -25,7 +26,7 @@ export function BulkUploadForm() {
     <form action={formAction} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Label htmlFor="csv">CSV content</Label>
-        <textarea
+        <Textarea
           id="csv"
           name="csv"
           required
@@ -33,7 +34,7 @@ export function BulkUploadForm() {
           placeholder={
             'Paste a CSV with CPFs and/or CNPJs.\n\n111.444.777-35\n529.982.247-25\n11.222.333/0001-81\n'
           }
-          className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm shadow-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="min-h-48 font-mono"
         />
         <p className="text-xs text-muted-foreground">
           Up to 250 unique documents per job. Duplicates are removed automatically.

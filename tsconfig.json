@@ -36,8 +36,10 @@
     "tests/**/*.ts",
     "tests/**/*.tsx",
     "vitest.config.ts",
+    ".storybook/**/*.ts",
+    ".storybook/**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "legacy-streamlit", ".next", "supabase/functions"]
+  "exclude": ["node_modules", "legacy-streamlit", ".next", "supabase/functions", "storybook-static"]
 }

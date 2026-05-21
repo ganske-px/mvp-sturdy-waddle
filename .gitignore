@@ -233,6 +233,20 @@ coverage/
 .vitest/
 
 # ===========================
+# Storybook
+# ===========================
+storybook-static/
+.storybook-out/
+node_modules/.cache/storybook/
+
+# ===========================
+# Playwright (visual tests)
+# ===========================
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ===========================
 # Env / secrets (extra)
 # ===========================
 .env*.local

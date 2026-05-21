@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -8,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { createClient } from '@/lib/supabase/server';
+import { ShieldCheckIcon } from 'lucide-react';
 
 export const metadata = {
   title: 'Audit — PX Process Check',
@@ -37,6 +39,17 @@ const ACTION_LABELS: Record<AuditRow['action'], string> = {
   search_bulk_item: 'Bulk search item',
   bulk_job_created: 'Bulk job created',
   export_csv: 'CSV export',
+};
+
+type ActionBadgeVariant = 'default' | 'secondary' | 'outline' | 'muted' | 'info';
+
+const ACTION_VARIANTS: Record<AuditRow['action'], ActionBadgeVariant> = {
+  login: 'info',
+  logout: 'muted',
+  search_single: 'default',
+  search_bulk_item: 'default',
+  bulk_job_created: 'secondary',
+  export_csv: 'outline',
 };
 
 function formatDateTime(iso: string): string {
@@ -84,7 +97,13 @@ export default async function AuditPage() {
               Failed to load audit: {error.message}
             </p>
           ) : !rows || rows.length === 0 ? (
-            <p className="text-muted-foreground">No audit events yet.</p>
+            <div className="flex flex-col items-center py-10">
+              <ShieldCheckIcon className="size-8 text-muted-foreground/60" />
+              <p className="mt-2 text-sm font-medium">No audit events yet</p>
+              <p className="text-xs text-muted-foreground">
+                Your actions appear here as you use the app.
+              </p>
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -100,17 +119,27 @@ export default async function AuditPage() {
               <TableBody>
                 {rows.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                    <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
                       {formatDateTime(r.created_at)}
                     </TableCell>
-                    <TableCell>{ACTION_LABELS[r.action]}</TableCell>
-                    <TableCell className="uppercase">{r.search_type ?? '—'}</TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell>
+                      <Badge variant={ACTION_VARIANTS[r.action]}>{ACTION_LABELS[r.action]}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {r.search_type ? (
+                        <Badge variant="outline" className="uppercase tracking-wider">
+                          {r.search_type}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">
                       {truncateHash(r.document_hash)}
                       {r.metadata && typeof r.metadata.cached === 'boolean' ? (
-                        <span className="ml-2 text-muted-foreground">
-                          ({r.metadata.cached ? 'cached' : 'fresh'})
-                        </span>
+                        <Badge variant={r.metadata.cached ? 'info' : 'success'} className="ml-2">
+                          {r.metadata.cached ? 'cached' : 'fresh'}
+                        </Badge>
                       ) : null}
                     </TableCell>
                     <TableCell className="font-mono text-xs">{r.ip ?? '—'}</TableCell>

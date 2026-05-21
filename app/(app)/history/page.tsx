@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -8,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { createClient } from '@/lib/supabase/server';
+import { SearchIcon } from 'lucide-react';
 
 export const metadata = {
   title: 'History — PX Process Check',
@@ -64,7 +66,13 @@ export default async function HistoryPage() {
               Failed to load history: {error.message}
             </p>
           ) : !searches || searches.length === 0 ? (
-            <p className="text-muted-foreground">No searches yet.</p>
+            <div className="flex flex-col items-center py-10">
+              <SearchIcon className="size-8 text-muted-foreground/60" />
+              <p className="mt-2 text-sm font-medium">No searches yet</p>
+              <p className="text-xs text-muted-foreground">
+                Run your first search to see history here.
+              </p>
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -78,14 +86,20 @@ export default async function HistoryPage() {
               <TableBody>
                 {searches.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                    <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
                       {formatDateTime(s.created_at)}
                     </TableCell>
-                    <TableCell>{TYPE_LABELS[s.search_type]}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="uppercase tracking-wider">
+                        {TYPE_LABELS[s.search_type]}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="font-mono text-xs">
                       {s.term_preview}
                       {s.error_message ? (
-                        <span className="ml-2 text-destructive">(error)</span>
+                        <Badge variant="destructive" className="ml-2">
+                          error
+                        </Badge>
                       ) : null}
                     </TableCell>
                     <TableCell className="text-right">{s.result_count}</TableCell>
