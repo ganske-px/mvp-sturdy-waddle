@@ -183,3 +183,83 @@ describe('setCachedResults', () => {
     expect(result?.results).toEqual(SAMPLE);
   });
 });
+
+function buildGraphAwareClient() {
+  const rpcCalls: Array<{ name: string; params: unknown }> = [];
+  return {
+    rpcCalls,
+    client: {
+      from(table: string) {
+        if (table !== 'predictus_cache') throw new Error(`unexpected table: ${table}`);
+        return {
+          upsert(_values: unknown) {
+            return Promise.resolve({ error: null });
+          },
+        };
+      },
+      rpc(name: string, params: Record<string, unknown>) {
+        rpcCalls.push({ name, params });
+        if (name === 'encrypt_payload') return Promise.resolve({ data: 'cipher', error: null });
+        if (name === 'encrypt_graph_label')
+          return Promise.resolve({ data: '\\x6869', error: null });
+        if (name === 'upsert_graph') return Promise.resolve({ data: null, error: null });
+        throw new Error(`unexpected rpc: ${name}`);
+      },
+    },
+  };
+}
+
+describe('setCachedResults — graph hook', () => {
+  it('calls upsert_graph after the cache upsert when payload yields nodes', async () => {
+    const { client, rpcCalls } = buildGraphAwareClient();
+    const payload = [
+      {
+        numeroProcessoUnico: 'P-1',
+        partes: [
+          { tipo: 'AUTOR', nome: 'Alice', cpf: '11144477735' },
+          { tipo: 'RÉU', nome: 'Beto', cpf: '52998224725' },
+        ],
+      },
+    ];
+    await setCachedResults(client as never, 'hash-x', 'cpf', payload as never);
+
+    const names = rpcCalls.map((c) => c.name);
+    expect(names).toContain('encrypt_payload');
+    expect(names).toContain('encrypt_graph_label');
+    expect(names).toContain('upsert_graph');
+  });
+
+  it('does not call upsert_graph when payload has no extractable partes', async () => {
+    const { client, rpcCalls } = buildGraphAwareClient();
+    await setCachedResults(client as never, 'hash-empty', 'cpf', []);
+    expect(rpcCalls.map((c) => c.name)).not.toContain('upsert_graph');
+  });
+
+  it('swallows graph errors and lets the cache write succeed', async () => {
+    const client = {
+      from(_t: string) {
+        return {
+          upsert(_v: unknown) {
+            return Promise.resolve({ error: null });
+          },
+        };
+      },
+      rpc(name: string) {
+        if (name === 'encrypt_payload') return Promise.resolve({ data: 'cipher', error: null });
+        return Promise.resolve({ data: null, error: { message: 'boom' } });
+      },
+    };
+    const payload = [
+      {
+        numeroProcessoUnico: 'P-1',
+        partes: [
+          { tipo: 'AUTOR', nome: 'A', cpf: '11144477735' },
+          { tipo: 'RÉU', nome: 'B', cpf: '52998224725' },
+        ],
+      },
+    ];
+    await expect(
+      setCachedResults(client as never, 'h', 'cpf', payload as never),
+    ).resolves.toBeUndefined();
+  });
+});

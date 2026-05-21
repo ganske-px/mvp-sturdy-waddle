@@ -1,4 +1,6 @@
 import { decryptText, encryptText } from '@/lib/crypto/vault';
+import { extractGraph } from '@/lib/graph/extractor';
+import { upsertGraph } from '@/lib/graph/writer';
 import type { Database } from '@/lib/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PredictusProcess, PredictusSearchType } from './types';
@@ -73,5 +75,14 @@ export async function setCachedResults(
   } as never);
   if (error) {
     throw new Error(`cache.setCachedResults failed: ${error.message}`);
+  }
+
+  try {
+    const { nodes, edges } = extractGraph({ payload: results, searchedHash: documentHash });
+    if (nodes.length > 0) {
+      await upsertGraph(client, nodes, edges);
+    }
+  } catch (e) {
+    console.warn('graph upsert failed; cache write succeeded:', e);
   }
 }
