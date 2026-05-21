@@ -4,11 +4,15 @@ import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
 import { decryptLabel } from '@/lib/graph/label-crypto';
 import type { EdgeKind, GraphNodeLabel, NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
+import { hashDocument } from '@/lib/hash';
 import { setCachedResults } from '@/lib/predictus/cache';
 import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { isValid as isCnpjValid } from '@/lib/validators/cnpj';
+import { isValid as isCpfValid } from '@/lib/validators/cpf';
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 export type GraphNodeDto = {
   hash: string;
@@ -240,4 +244,17 @@ export async function expandNode(
 
   const subgraph = await getSubgraph(hash);
   return { subgraph, usedPredictus: true };
+}
+
+export async function navigateToNetwork(formData: FormData): Promise<void> {
+  await requirePermission('search_network');
+  const value = String(formData.get('q') ?? '').trim();
+  if (isCpfValid(value)) {
+    redirect(`/network/${encodeURIComponent(hashDocument('cpf', value))}`);
+  }
+  if (isCnpjValid(value)) {
+    redirect(`/network/${encodeURIComponent(hashDocument('cnpj', value))}`);
+  }
+  // Stay on the same page; the header re-renders. We just no-op for invalid input.
+  redirect(`/network/_invalid?q=${encodeURIComponent(value)}`);
 }

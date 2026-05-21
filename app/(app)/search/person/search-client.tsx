@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +21,7 @@ import {
   SearchIcon,
   SparklesIcon,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { type PersonSearchType, type SearchPersonResult, searchPerson } from './actions';
@@ -79,9 +81,11 @@ function SubmitButton() {
 export function PersonSearchClient({
   initialQuery = '',
   initialType = 'cpf',
+  canSeeNetwork = false,
 }: {
   initialQuery?: string;
   initialType?: PersonSearchType;
+  canSeeNetwork?: boolean;
 }) {
   const [type, setType] = useState<PersonSearchType>(initialType);
   const [state, formAction] = useActionState<SearchPersonResult | null, FormData>(
@@ -175,19 +179,29 @@ export function PersonSearchClient({
                   </CardDescription>
                 ) : null}
               </div>
-              {state.ok ? (
-                state.cached ? (
-                  <Badge variant="info">
-                    <ClockIcon />
-                    Em cache · {timeAgo(state.fetchedAt)}
-                  </Badge>
-                ) : (
-                  <Badge variant="success">
-                    <SparklesIcon />
-                    Resultado fresco
-                  </Badge>
-                )
-              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                {state.ok ? (
+                  state.cached ? (
+                    <Badge variant="info">
+                      <ClockIcon />
+                      Em cache · {timeAgo(state.fetchedAt)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="success">
+                      <SparklesIcon />
+                      Resultado fresco
+                    </Badge>
+                  )
+                ) : null}
+                {state.ok && state.networkHash && canSeeNetwork ? (
+                  <Link
+                    href={`/network/${encodeURIComponent(state.networkHash)}`}
+                    className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                  >
+                    Ver rede
+                  </Link>
+                ) : null}
+              </div>
             </div>
           </CardHeader>
           <CardContent>

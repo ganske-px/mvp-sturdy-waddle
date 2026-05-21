@@ -1,6 +1,7 @@
 import { requirePermission } from '@/lib/auth/permissions';
 import { getSubgraph } from './actions';
 import { NetworkCanvas } from './network-canvas';
+import { NetworkHeader } from './network-header';
 
 export default async function NetworkPage({
   params,
@@ -13,7 +14,7 @@ export default async function NetworkPage({
   const subgraph = await getSubgraph(decoded);
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Rede</h1>
+      <NetworkHeader centerName={subgraph.center?.label.name ?? null} />
       <NetworkCanvas subgraph={subgraph} />
     </div>
   );

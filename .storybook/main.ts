@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { StorybookConfig } from '@storybook/nextjs';
 
 const storybookDir = dirname(fileURLToPath(import.meta.url));

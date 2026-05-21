@@ -1,3 +1,4 @@
+import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 import { CompanySearchClient } from './search-client';
 
 export const metadata = { title: 'Buscar empresa — Radar PX' };
@@ -9,6 +10,10 @@ export default async function CompanySearchPage({
 }) {
   const sp = await searchParams;
   const initialQuery = sp.q?.trim() ?? '';
+
+  const user = await requireAuth();
+  const perms = await listUserPermissions(user.id);
+  const canSeeNetwork = user.role === 'admin' || perms.has('search_network');
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-12">
@@ -23,7 +28,7 @@ export default async function CompanySearchPage({
           Consulta processual por CNPJ. Resultados são guardados em cache por 30 dias.
         </p>
       </header>
-      <CompanySearchClient initialQuery={initialQuery} />
+      <CompanySearchClient initialQuery={initialQuery} canSeeNetwork={canSeeNetwork} />
     </main>
   );
 }

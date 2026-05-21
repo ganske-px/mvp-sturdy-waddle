@@ -23,6 +23,7 @@ export type SearchPersonOk = {
   searchType: PersonSearchType;
   cached: boolean;
   fetchedAt: string;
+  networkHash: string | null;
 };
 
 export type SearchPersonErr = { ok: false; error: string };
@@ -58,6 +59,8 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
     termPreview = maskName(trimmed);
     displayTerm = trimmed;
   }
+
+  const networkHash = input.type === 'name' ? null : documentHash;
 
   const admin = createAdminClient();
   const requestContext = extractRequestContext(await headers());
@@ -97,6 +100,7 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
       searchType: input.type,
       cached: true,
       fetchedAt: cached.fetchedAt,
+      networkHash,
     };
   }
 
@@ -142,5 +146,6 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
     searchType: input.type,
     cached: false,
     fetchedAt,
+    networkHash,
   };
 }

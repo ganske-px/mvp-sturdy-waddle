@@ -23,6 +23,7 @@ export type SearchByCnpjOk = {
   displayTerm: string;
   cached: boolean;
   fetchedAt: string;
+  networkHash: string | null;
 };
 
 export type SearchByCnpjErr = { ok: false; error: string };
@@ -45,6 +46,7 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
   const documentHash = hashDocument('cnpj', trimmed);
   const termPreview = maskCnpj(trimmed);
   const displayTerm = formatCnpj(trimmed);
+  const networkHash = documentHash;
 
   const admin = createAdminClient();
   const requestContext = extractRequestContext(await headers());
@@ -83,6 +85,7 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
       displayTerm,
       cached: true,
       fetchedAt: cached.fetchedAt,
+      networkHash,
     };
   }
 
@@ -118,5 +121,5 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
     result_count: results.length,
   } as never);
 
-  return { ok: true, results, displayTerm, cached: false, fetchedAt };
+  return { ok: true, results, displayTerm, cached: false, fetchedAt, networkHash };
 }
