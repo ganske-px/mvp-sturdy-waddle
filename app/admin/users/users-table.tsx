@@ -29,6 +29,7 @@ const SERVICE_LABEL: Record<Service, string> = {
   search_person: 'Pessoa',
   search_company: 'Empresa',
   search_bulk: 'Lote',
+  search_network: 'Rede',
 };
 
 export function UsersTable({ rows }: { rows: UserRow[] }) {

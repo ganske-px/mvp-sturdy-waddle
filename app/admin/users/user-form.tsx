@@ -23,12 +23,14 @@ const ALL_SERVICES: readonly Service[] = [
   'search_person',
   'search_company',
   'search_bulk',
+  'search_network',
 ] as const;
 
 const SERVICE_LABEL: Record<Service, string> = {
   search_person: 'Buscar pessoa (CPF e nome)',
   search_company: 'Buscar empresa (CNPJ)',
   search_bulk: 'Buscar em lote',
+  search_network: 'Visualizar rede',
 };
 
 export function UserForm({
