@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Link from 'next/link';
 import type { GraphEdgeDto, GraphNodeDto } from './actions';
+import { ExpandButton } from './expand-button';
 
 function formatDoc(node: GraphNodeDto): string | null {
   if (node.type === 'cpf' && node.label.document) {
@@ -70,11 +71,14 @@ export function NodeDetailPanel({
           </div>
         ) : null}
         {node.type !== 'lawyer' ? (
-          <Link href={`/network/${encodeURIComponent(node.hash)}`}>
-            <Button variant="outline" size="sm" className="w-full">
-              Ver rede deste nó
-            </Button>
-          </Link>
+          <>
+            <ExpandButton hash={node.hash} inCache={node.inCache} />
+            <Link href={`/network/${encodeURIComponent(node.hash)}`}>
+              <Button variant="outline" size="sm" className="w-full">
+                Ver rede deste nó
+              </Button>
+            </Link>
+          </>
         ) : null}
       </CardContent>
     </Card>
