@@ -99,6 +99,17 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
   - `predictus_token`, `crypto` helpers — **service-role only** (no policies → RLS denies everyone else).
 - Anything that writes `audit_log` or `predictus_cache` must use `createAdminClient()` (service role). Anything that reads operator-private data uses `createClient()` (server, cookie-aware).
 
+### Papéis e permissões
+
+- Dois papéis: `admin` e `operator`. Coluna `role` em `public.users`, default `operator`.
+- `is_active` em `public.users` é a flag de soft-delete; o proxy bloqueia operadores com `is_active=false`.
+- Permissões por serviço vivem em `public.user_service_permissions` (linha presente = permissão concedida). Vocabulário fechado por CHECK: `search_person`, `search_company`, `search_bulk`.
+- Admin **sempre** tem todas as permissões — `has_service_permission` retorna true para admins independentemente de linhas em `user_service_permissions`. Não popular permissões para admins.
+- Helper SQL `public.is_admin(uuid)` e `public.has_service_permission(uuid, text)` são fonte única de verdade. Use-os em RLS, no proxy e via RPC em `lib/auth/permissions.ts`.
+- Server Actions e páginas chamam `requireAuth() / requireAdmin() / requirePermission(svc)` no topo — defesa em profundidade contra navegação direta.
+- Mutações sobre `public.users` (toggle is_active, mudar role) e `user_service_permissions` rodam sempre via `createAdminClient()` em Server Actions.
+- Guards `assertNotSelf` e `assertNotLastActiveAdmin` em `lib/auth/admin-guards.ts` impedem self-lockout.
+
 ### Predictus client
 
 - Never `new PredictusClient(...)` directly inside `app/` or `supabase/functions/`. Use `createServerPredictusClient()` from `lib/predictus/server-client.ts`. It wires the `SupabaseTokenStore` so the access token survives cold starts.
@@ -181,6 +192,26 @@ The full SQL lives under `supabase/migrations/`. Treat migrations as append-only
 6. Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` in `.env.local`
 7. `pnpm dev`
 
+### Adicionar uma nova permissão de serviço
+
+1. Migration nova: `alter table public.user_service_permissions drop constraint user_service_permissions_service_check; alter table public.user_service_permissions add constraint user_service_permissions_service_check check (service in ('search_person','search_company','search_bulk','<novo>'));`
+2. Adicionar o literal em `Service` em `lib/auth/permissions.ts` e em `ALL_SERVICES`.
+3. Adicionar a label em `SERVICE_LABEL` em `components/app-header.tsx`, `app/admin/users/user-form.tsx` e `app/(app)/home-modules.tsx` (todas em pt-BR).
+4. Adicionar item de navegação em `NAV_ITEMS` no header, com gate apontando para o novo Service.
+5. Gatear o entrypoint do serviço com `await requirePermission('<novo>')` no Server Action correspondente.
+6. Atualizar stories que enumeram `ALL_SERVICES` (UserForm, HomeModules).
+7. Documentar o serviço no README.
+
+## Bootstrap do primeiro admin
+
+Operadores existentes quando a migration de roles entrou ficam `role='operator', is_active=true, sem permissões`. Para criar o primeiro admin, rode no Studio:
+
+```sql
+update public.users set role='admin' where email='seu-email@px.center';
+```
+
+Depois, o admin cria os demais operadores via `/admin/users/new`.
+
 ## Things to never do
 
 - **Never** put a CPF/CNPJ in `console.log`, `console.error`, an error message, or any persisted artifact. Hash or mask first.
@@ -192,6 +223,10 @@ The full SQL lives under `supabase/migrations/`. Treat migrations as append-only
 - **Never** edit a migration after it has been applied to any environment. Add a new one.
 - **Never** disable a Biome rule globally to silence a warning. Add a targeted `biome-ignore` with a justification.
 - **Never** skip `pnpm typecheck` and `pnpm test` before committing.
+- **Nunca** citar nomes de fornecedores (ex.: Predictus) em copy visível ao operador. Use "consulta", "serviço de consulta" ou "fonte de dados".
+- **Nunca** misturar copy em inglês na UI. A interface é toda pt-BR.
+- **Nunca** criar usuário no Supabase Studio para uso operacional. Use `/admin/users/new`. Studio fica reservado para bootstrap inicial e operações de emergência.
+- **Nunca** chamar `requireAdmin` / `requirePermission` apenas no proxy — sempre repetir na Server Action ou Page como defesa em profundidade.
 
 ## Commands cheatsheet
 
