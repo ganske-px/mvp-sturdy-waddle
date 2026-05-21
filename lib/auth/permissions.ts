@@ -2,12 +2,13 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 
-export type Service = 'search_person' | 'search_company' | 'search_bulk';
+export type Service = 'search_person' | 'search_company' | 'search_bulk' | 'search_network';
 
 export const ALL_SERVICES: readonly Service[] = [
   'search_person',
   'search_company',
   'search_bulk',
+  'search_network',
 ] as const;
 
 export type AppUser = {

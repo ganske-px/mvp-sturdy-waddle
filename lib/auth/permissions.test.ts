@@ -172,7 +172,30 @@ describe('requirePermission', () => {
 });
 
 describe('ALL_SERVICES', () => {
-  it('contains the three known services', () => {
-    expect([...ALL_SERVICES].sort()).toEqual(['search_bulk', 'search_company', 'search_person']);
+  it('contains the four known services', () => {
+    expect([...ALL_SERVICES].sort()).toEqual([
+      'search_bulk',
+      'search_company',
+      'search_network',
+      'search_person',
+    ]);
+  });
+
+  it("includes 'search_network'", () => {
+    expect(ALL_SERVICES).toContain('search_network');
+  });
+});
+
+describe('requirePermission with search_network', () => {
+  it('admin bypasses RPC for search_network', async () => {
+    const row = fakeAdmin();
+    const client = buildSupabaseMock({
+      userRow: row,
+      authUser: { id: row.id },
+      rpcResult: false,
+    });
+    mocked.mockResolvedValueOnce(client as never);
+    const user = await requirePermission('search_network');
+    expect(user.role).toBe('admin');
   });
 });
