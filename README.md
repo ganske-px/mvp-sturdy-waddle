@@ -47,9 +47,38 @@ What it does **not** do:
 
 ## Auth model
 
-Operators are created manually by the admin via Supabase Studio (Auth → Add user). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `proxy.ts` redirects any authenticated user without a `public.users` row to `/access-denied`. Revoke access by deleting the `public.users` row — the `auth.users` row can stay dormant.
+Operators are created by an admin through the in-app UI at `/admin/users/new` (Supabase Studio is no longer used for routine user creation — see "Bootstrap do primeiro admin" below for the one-time exception). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `proxy.ts` redirects any authenticated user without a `public.users` row to `/access-denied`. Admins can also disable a `public.users` row (`is_active=false`) to revoke access without deleting the underlying `auth.users` row.
 
 Password requirements: 12+ chars, mixed case, digits, symbols.
+
+## Papéis e permissões
+
+A app tem dois papéis: **admin** e **operator**.
+
+- **Operator** acessa apenas os serviços que um admin habilitou para ele:
+  - Buscar pessoa (CPF e nome)
+  - Buscar empresa (CNPJ)
+  - Buscar em lote (CSV)
+- **Admin** tem todas as permissões automaticamente, além de:
+  - Criar operadores e definir senha temporária
+  - Ativar/desativar contas
+  - Promover/rebaixar entre admin e operator
+  - Mudar permissões de qualquer operador
+  - Ver o audit log de todos os operadores em `/admin/audit`
+
+Operadores são criados pela UI em `/admin/users/new`. A senha temporária é exibida uma única vez para o admin repassar pelo canal seguro. Sem dependência de SMTP.
+
+## Bootstrap do primeiro admin
+
+Depois de aplicar as migrations (`pnpm exec supabase db push`), promova um usuário existente a admin via SQL no Supabase Studio:
+
+```sql
+update public.users
+set role = 'admin'
+where email = 'seu-email@px.center';
+```
+
+Todos os operadores que já existiam quando a migration entrou ficam como `role='operator'`, `is_active=true`, **sem permissões**. Use a tela `/admin/users` para liberar acesso individualmente.
 
 ## LGPD posture
 
@@ -93,9 +122,22 @@ psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" \
 
 Idempotent. Without the secret, `encrypt_payload` / `decrypt_payload` throw a clear error and the search/bulk paths surface it.
 
-### 4. Create an operator
+### 4. Create the first admin, then operators
 
-Supabase Studio → Authentication → Add user. The trigger mirrors the user into `public.users` automatically.
+Routine user creation happens in-app at `/admin/users/new`, but you need an admin to get there. Bootstrap the first admin as follows:
+
+1. Create one user via Supabase Studio (Authentication → Add user) — the `on_auth_user_created` trigger mirrors them into `public.users`.
+2. Promote that user to admin in the Studio SQL editor:
+
+   ```sql
+   update public.users
+   set role = 'admin'
+   where email = 'seu-email@px.center';
+   ```
+
+3. Sign in as that admin and create the remaining operators from `/admin/users/new`. The temporary password is shown once — share it through a secure channel.
+
+See "Papéis e permissões" and "Bootstrap do primeiro admin" above for the full picture.
 
 ### 5. Configure Predictus credentials
 
