@@ -1,6 +1,7 @@
 'use server';
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
+import { requirePermission } from '@/lib/auth/permissions';
 import { type BulkItemInput, createBulkJob } from '@/lib/bulk/job-store';
 import { encryptText } from '@/lib/crypto/vault';
 import { parseCsv } from '@/lib/csv/parser';
@@ -26,6 +27,8 @@ export async function createBulkJobAction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: 'Not authenticated.' };
+
+  await requirePermission('search_bulk');
 
   const parsed = parseCsv(csvText);
   if (!parsed.ok) {
