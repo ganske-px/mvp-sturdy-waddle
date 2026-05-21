@@ -9,18 +9,24 @@ export type Database = {
           id: string;
           email: string;
           display_name: string | null;
+          role: 'admin' | 'operator';
+          is_active: boolean;
           created_at: string;
         };
         Insert: {
           id: string;
           email: string;
           display_name?: string | null;
+          role?: 'admin' | 'operator';
+          is_active?: boolean;
           created_at?: string;
         };
         Update: {
           id?: string;
           email?: string;
           display_name?: string | null;
+          role?: 'admin' | 'operator';
+          is_active?: boolean;
           created_at?: string;
         };
       };
@@ -175,6 +181,26 @@ export type Database = {
           processed_at?: string | null;
         };
       };
+      user_service_permissions: {
+        Row: {
+          user_id: string;
+          service: 'search_person' | 'search_company' | 'search_bulk';
+          granted_at: string;
+          granted_by: string | null;
+        };
+        Insert: {
+          user_id: string;
+          service: 'search_person' | 'search_company' | 'search_bulk';
+          granted_at?: string;
+          granted_by?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          service?: 'search_person' | 'search_company' | 'search_bulk';
+          granted_at?: string;
+          granted_by?: string | null;
+        };
+      };
       audit_log: {
         Row: {
           id: string;
@@ -185,7 +211,11 @@ export type Database = {
             | 'search_single'
             | 'search_bulk_item'
             | 'bulk_job_created'
-            | 'export_csv';
+            | 'export_csv'
+            | 'admin_user_created'
+            | 'admin_user_set_active'
+            | 'admin_user_set_role'
+            | 'admin_user_permission_changed';
           search_type: 'cpf' | 'cnpj' | 'name' | null;
           document_hash: string | null;
           result_count: number | null;
@@ -203,7 +233,11 @@ export type Database = {
             | 'search_single'
             | 'search_bulk_item'
             | 'bulk_job_created'
-            | 'export_csv';
+            | 'export_csv'
+            | 'admin_user_created'
+            | 'admin_user_set_active'
+            | 'admin_user_set_role'
+            | 'admin_user_permission_changed';
           search_type?: 'cpf' | 'cnpj' | 'name' | null;
           document_hash?: string | null;
           result_count?: number | null;
@@ -221,7 +255,11 @@ export type Database = {
             | 'search_single'
             | 'search_bulk_item'
             | 'bulk_job_created'
-            | 'export_csv';
+            | 'export_csv'
+            | 'admin_user_created'
+            | 'admin_user_set_active'
+            | 'admin_user_set_role'
+            | 'admin_user_permission_changed';
           search_type?: 'cpf' | 'cnpj' | 'name' | null;
           document_hash?: string | null;
           result_count?: number | null;
@@ -230,6 +268,16 @@ export type Database = {
           metadata?: Record<string, unknown> | null;
           created_at?: string;
         };
+      };
+    };
+    Functions: {
+      is_admin: {
+        Args: { uid: string };
+        Returns: boolean;
+      };
+      has_service_permission: {
+        Args: { uid: string; svc: string };
+        Returns: boolean;
       };
     };
   };
