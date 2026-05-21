@@ -39,16 +39,22 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && !isPublic) {
-    // Allowlist check: the trigger on auth.users creates the mirror row, but
-    // a row may have been deleted by the admin to revoke access. RLS allows
-    // the user to read only their own row, so an empty result means revoked.
-    const { data: allowlistRow } = await supabase
+    // Single SELECT pulls all the gates we need: allowlist presence,
+    // soft-deletion (is_active), and admin-area access (role).
+    const { data: row } = await supabase
       .from('users')
-      .select('id')
+      .select('id, role, is_active')
       .eq('id', user.id)
-      .maybeSingle();
+      .maybeSingle()
+      .returns<{ id: string; role: 'admin' | 'operator'; is_active: boolean }>();
 
-    if (!allowlistRow) {
+    if (!row || !row.is_active) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/access-denied';
+      return NextResponse.redirect(url);
+    }
+
+    if (pathname.startsWith('/admin') && row.role !== 'admin') {
       const url = request.nextUrl.clone();
       url.pathname = '/access-denied';
       return NextResponse.redirect(url);
