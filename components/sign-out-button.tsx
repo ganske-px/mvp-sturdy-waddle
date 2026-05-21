@@ -2,6 +2,7 @@
 
 import { signOut } from '@/app/sign-out/actions';
 import { Button } from '@/components/ui/button';
+import { LogOutIcon } from 'lucide-react';
 import { useTransition } from 'react';
 
 export function SignOutButton() {
@@ -18,7 +19,8 @@ export function SignOutButton() {
         });
       }}
     >
-      {isPending ? 'Signing out…' : 'Sign out'}
+      <LogOutIcon className="size-3.5" />
+      {isPending ? 'Saindo…' : 'Sair'}
     </Button>
   );
 }

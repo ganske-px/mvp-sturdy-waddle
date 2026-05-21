@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import { JobProgress } from './job-progress';
@@ -47,13 +47,21 @@ export default async function BulkJobPage({ params }: { params: Promise<{ jobId:
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-12">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Bulk job</h1>
-        <p className="text-muted-foreground font-mono text-xs">{job.id}</p>
+      <header className="flex flex-col gap-2">
+        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
+          Acompanhamento em tempo real
+        </span>
+        <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
+          Job em lote
+        </h1>
+        <p className="font-mono text-xs text-muted-foreground">{job.id}</p>
       </header>
       <Card>
         <CardHeader>
-          <CardTitle>Progress</CardTitle>
+          <CardTitle>Progresso</CardTitle>
+          <CardDescription>
+            Cada documento é consultado individualmente com rate-limit de 1 req / 3,6 s.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <JobProgress initialJob={job} initialItems={items ?? []} />

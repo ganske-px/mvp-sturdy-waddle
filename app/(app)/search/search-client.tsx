@@ -13,6 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  ClockIcon,
+  SearchIcon,
+  SparklesIcon,
+} from 'lucide-react';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { type SearchByDocResult, type SearchType, searchByDoc } from './actions';
@@ -20,7 +27,13 @@ import { type SearchByDocResult, type SearchType, searchByDoc } from './actions'
 const TYPE_LABELS: Record<SearchType, string> = {
   cpf: 'CPF',
   cnpj: 'CNPJ',
-  name: 'Name',
+  name: 'Nome',
+};
+
+const TYPE_DESCRIPTIONS: Record<SearchType, string> = {
+  cpf: 'Pessoa física — KYC',
+  cnpj: 'Pessoa jurídica — KYB',
+  name: 'Nome completo — KYE',
 };
 
 const PLACEHOLDERS: Record<SearchType, string> = {
@@ -38,13 +51,13 @@ function formatBRL(value: number | string | undefined): string {
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return 'just now';
+  if (ms < 60_000) return 'agora';
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return `há ${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `há ${hours} h`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `há ${days} d`;
 }
 
 async function submitAction(
@@ -59,8 +72,9 @@ async function submitAction(
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
-      {pending ? 'Searching…' : 'Search'}
+    <Button type="submit" size="lg" disabled={pending}>
+      <SearchIcon className="size-4" />
+      {pending ? 'Consultando…' : 'Consultar'}
     </Button>
   );
 }
@@ -73,21 +87,22 @@ export function SearchClient() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <Card>
         <CardHeader>
-          <CardTitle>New search</CardTitle>
-          <CardDescription>Look up judicial processes by CPF, CNPJ or name.</CardDescription>
+          <CardTitle>Nova consulta</CardTitle>
+          <CardDescription>{TYPE_DESCRIPTIONS[type]}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={formAction} className="flex flex-col gap-4">
+          <form action={formAction} className="flex flex-col gap-5">
             <input type="hidden" name="type" value={type} />
+
             <div className="flex flex-col gap-2">
-              <Label>Type</Label>
+              <Label>Tipo de documento</Label>
               <div
-                className="inline-flex gap-0.5 rounded-lg border bg-muted/40 p-0.5"
+                className="inline-flex gap-0.5 rounded-xl border border-border bg-muted/50 p-1"
                 role="radiogroup"
-                aria-label="Search type"
+                aria-label="Tipo de consulta"
               >
                 {(['cpf', 'cnpj', 'name'] as const).map((t) => {
                   const active = type === t;
@@ -101,8 +116,8 @@ export function SearchClient() {
                       onClick={() => setType(t)}
                       className={
                         active
-                          ? 'flex-1 rounded-md bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm ring-1 ring-border transition-colors'
-                          : 'flex-1 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
+                          ? 'flex-1 rounded-lg bg-card px-4 py-2 text-sm font-semibold text-primary shadow-card transition-all'
+                          : 'flex-1 rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground'
                       }
                     >
                       {TYPE_LABELS[t]}
@@ -111,10 +126,19 @@ export function SearchClient() {
                 })}
               </div>
             </div>
+
             <div className="flex flex-col gap-2">
-              <Label htmlFor="q">Term</Label>
-              <Input id="q" name="q" placeholder={PLACEHOLDERS[type]} autoComplete="off" required />
+              <Label htmlFor="q">Termo</Label>
+              <Input
+                id="q"
+                name="q"
+                placeholder={PLACEHOLDERS[type]}
+                autoComplete="off"
+                required
+                className={type === 'name' ? '' : 'font-mono tracking-tight'}
+              />
             </div>
+
             <div className="flex justify-end">
               <SubmitButton />
             </div>
@@ -124,35 +148,53 @@ export function SearchClient() {
 
       {state ? (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <CardTitle>
-              {state.ok
-                ? `${state.results.length} result${state.results.length === 1 ? '' : 's'} for ${state.displayTerm}`
-                : 'Search failed'}
-            </CardTitle>
-            {state.ok ? (
-              state.cached ? (
-                <Badge variant="info">Cached · {timeAgo(state.fetchedAt)}</Badge>
-              ) : (
-                <Badge variant="success">Fresh</Badge>
-              )
-            ) : null}
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <CardTitle>
+                  {state.ok
+                    ? `${state.results.length} ${state.results.length === 1 ? 'resultado' : 'resultados'}`
+                    : 'Consulta falhou'}
+                </CardTitle>
+                {state.ok ? (
+                  <CardDescription>
+                    Termo: <span className="font-mono text-foreground">{state.displayTerm}</span>
+                  </CardDescription>
+                ) : null}
+              </div>
+              {state.ok ? (
+                state.cached ? (
+                  <Badge variant="info">
+                    <ClockIcon />
+                    Em cache · {timeAgo(state.fetchedAt)}
+                  </Badge>
+                ) : (
+                  <Badge variant="success">
+                    <SparklesIcon />
+                    Resultado fresco
+                  </Badge>
+                )
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent>
             {state.ok ? (
               state.results.length === 0 ? (
-                <div className="py-8 text-center">
-                  <p className="text-sm">No processes found.</p>
-                  <p className="text-sm text-muted-foreground">The record appears clean.</p>
+                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
+                  <CheckCircle2Icon className="size-8 text-success" />
+                  <p className="text-sm font-medium">Nenhum processo encontrado</p>
+                  <p className="text-xs text-muted-foreground">
+                    O documento aparenta estar limpo no Predictus.
+                  </p>
                 </div>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Process</TableHead>
-                      <TableHead>Court</TableHead>
-                      <TableHead>Class</TableHead>
-                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead>Processo</TableHead>
+                      <TableHead>Tribunal</TableHead>
+                      <TableHead>Classe</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -161,9 +203,11 @@ export function SearchClient() {
                         <TableCell className="font-mono text-xs">
                           {p.numeroProcessoUnico ?? '—'}
                         </TableCell>
-                        <TableCell>{p.tribunal ?? '—'}</TableCell>
-                        <TableCell>{p.classeProcessual ?? '—'}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-sm">{p.tribunal ?? '—'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {p.classeProcessual ?? '—'}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
                           {formatBRL(p.valorCausa?.valor)}
                         </TableCell>
                       </TableRow>
@@ -174,9 +218,10 @@ export function SearchClient() {
             ) : (
               <div
                 role="alert"
-                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
               >
-                {state.error}
+                <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+                <span>{state.error}</span>
               </div>
             )}
           </CardContent>

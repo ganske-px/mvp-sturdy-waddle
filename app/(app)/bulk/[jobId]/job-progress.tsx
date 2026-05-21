@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { createClient } from '@/lib/supabase/client';
+import { AlertCircleIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 type JobRow = {
@@ -34,10 +35,10 @@ type ItemRow = {
 type BadgeVariant = 'muted' | 'info' | 'success' | 'warning' | 'destructive';
 
 const STATUS_LABELS: Record<JobRow['status'], string> = {
-  pending: 'Pending',
-  running: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
+  pending: 'Pendente',
+  running: 'Em execução',
+  completed: 'Concluído',
+  failed: 'Falhou',
 };
 
 const STATUS_VARIANTS: Record<JobRow['status'], BadgeVariant> = {
@@ -48,11 +49,11 @@ const STATUS_VARIANTS: Record<JobRow['status'], BadgeVariant> = {
 };
 
 const ITEM_STATUS_LABELS: Record<ItemRow['status'], string> = {
-  pending: 'Pending',
-  processing: 'Processing',
-  found: 'Processes found',
-  clean: 'Clean',
-  error: 'Error',
+  pending: 'Pendente',
+  processing: 'Processando',
+  found: 'Processos encontrados',
+  clean: 'Limpo',
+  error: 'Erro',
 };
 
 const ITEM_STATUS_VARIANTS: Record<ItemRow['status'], BadgeVariant> = {
@@ -66,7 +67,7 @@ const ITEM_STATUS_VARIANTS: Record<ItemRow['status'], BadgeVariant> = {
 const PROGRESS_INDICATOR_CLASSES: Record<JobRow['status'], string> = {
   pending: '[&_[data-slot=progress-indicator]]:bg-primary',
   running: '[&_[data-slot=progress-indicator]]:bg-primary',
-  completed: '[&_[data-slot=progress-indicator]]:bg-emerald-500',
+  completed: '[&_[data-slot=progress-indicator]]:bg-success',
   failed: '[&_[data-slot=progress-indicator]]:bg-destructive',
 };
 
@@ -112,53 +113,67 @@ export function JobProgress({
   const percent = job.total_items > 0 ? Math.round((completedCount / job.total_items) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-baseline justify-between">
-        <div className="flex items-center gap-2 text-sm">
-          <Badge variant={STATUS_VARIANTS[job.status]}>{STATUS_LABELS[job.status]}</Badge>
-          <span className="font-medium">
-            {completedCount} of {job.total_items}
-            {job.error_items > 0 ? ` (${job.error_items} errors)` : ''}
-          </span>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Badge variant={STATUS_VARIANTS[job.status]}>{STATUS_LABELS[job.status]}</Badge>
+            <span className="text-sm font-medium tabular-nums">
+              {completedCount} de {job.total_items}
+              {job.error_items > 0 ? (
+                <span className="text-destructive"> · {job.error_items} erros</span>
+              ) : null}
+            </span>
+          </div>
+          <p className="text-2xl font-heading font-semibold tabular-nums text-primary">
+            {percent}%
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">{percent}%</p>
+        <Progress value={percent} className={PROGRESS_INDICATOR_CLASSES[job.status]} />
       </div>
-      <Progress value={percent} className={PROGRESS_INDICATOR_CLASSES[job.status]} />
 
       {job.error_message ? (
-        <p role="alert" className="text-sm text-destructive">
-          {job.error_message}
-        </p>
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        >
+          <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+          <span>{job.error_message}</span>
+        </div>
       ) : null}
 
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Document</TableHead>
-            <TableHead>Type</TableHead>
+            <TableHead>Documento</TableHead>
+            <TableHead>Tipo</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-right">Results</TableHead>
+            <TableHead className="text-right">Resultados</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {items.map((it) => (
             <TableRow key={it.id}>
               <TableCell className="font-mono text-xs">{it.document_preview}</TableCell>
-              <TableCell className="uppercase">{it.document_type}</TableCell>
               <TableCell>
-                <Badge variant={ITEM_STATUS_VARIANTS[it.status]}>
-                  {ITEM_STATUS_LABELS[it.status]}
+                <Badge variant="outline" size="sm">
+                  {it.document_type.toUpperCase()}
                 </Badge>
-                {it.error_message ? (
-                  <span className="ml-2 text-xs text-muted-foreground">— {it.error_message}</span>
-                ) : null}
               </TableCell>
-              <TableCell className="text-right">
-                {it.status === 'pending' || it.status === 'processing'
+              <TableCell>
+                <div className="flex flex-col gap-0.5">
+                  <Badge variant={ITEM_STATUS_VARIANTS[it.status]} size="sm">
+                    {ITEM_STATUS_LABELS[it.status]}
+                  </Badge>
+                  {it.error_message ? (
+                    <span className="text-xs text-muted-foreground">{it.error_message}</span>
+                  ) : null}
+                </div>
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {it.status === 'pending' || it.status === 'processing' || it.status === 'error'
                   ? '—'
-                  : it.status === 'error'
-                    ? '—'
-                    : it.result_count}
+                  : it.result_count}
               </TableCell>
             </TableRow>
           ))}
