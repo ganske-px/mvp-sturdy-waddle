@@ -24,7 +24,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: 'Radar PX — KYC · KYB · KYE Check',
-  description: 'Radar PX — background check via Predictus. Internal PX Center tool.',
+  description: 'Radar PX — verificação interna do PX Center.',
 };
 
 export default function RootLayout({
