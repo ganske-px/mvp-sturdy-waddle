@@ -86,3 +86,32 @@ describe('normalizeNameForHash', () => {
     expect(normalizeNameForHash('   ')).toBe('');
   });
 });
+
+describe('hashDocument — lawyer', () => {
+  it('hashes a lawyer key with UF + numero', () => {
+    const a = hashDocument('lawyer', 'SP-12345');
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('is case-insensitive on UF', () => {
+    expect(hashDocument('lawyer', 'sp-12345')).toBe(hashDocument('lawyer', 'SP-12345'));
+  });
+
+  it('trims surrounding whitespace', () => {
+    expect(hashDocument('lawyer', '  SP-12345  ')).toBe(hashDocument('lawyer', 'SP-12345'));
+  });
+
+  it('differs from CPF/CNPJ hashes with the same digits', () => {
+    // Prefix isolation: even if numero happened to be a 11-digit string, the
+    // result must differ from a CPF hash of those same digits.
+    const lawyerHash = hashDocument('lawyer', 'SP-12345678901');
+    const cpfHash = hashDocument('cpf', '12345678901');
+    expect(lawyerHash).not.toBe(cpfHash);
+  });
+
+  it('rejects malformed lawyer keys', () => {
+    expect(() => hashDocument('lawyer', '')).toThrow();
+    expect(() => hashDocument('lawyer', 'SP')).toThrow(); // missing numero
+    expect(() => hashDocument('lawyer', '-12345')).toThrow(); // missing UF
+  });
+});

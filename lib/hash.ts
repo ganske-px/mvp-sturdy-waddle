@@ -2,10 +2,19 @@ import { createHash } from 'node:crypto';
 import { normalize as normalizeCnpj } from '@/lib/validators/cnpj';
 import { normalize as normalizeCpf } from '@/lib/validators/cpf';
 
-export type HashDocumentType = 'cpf' | 'cnpj' | 'name';
+export type HashDocumentType = 'cpf' | 'cnpj' | 'name' | 'lawyer';
 
 export function normalizeNameForHash(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function normalizeLawyerKey(value: string): string {
+  const trimmed = value.trim().toUpperCase();
+  const match = trimmed.match(/^([A-Z]{2})-(\d+)$/);
+  if (!match) {
+    throw new Error("Cannot hash lawyer: expected '<UF>-<numero>'.");
+  }
+  return `${match[1]}-${match[2]}`;
 }
 
 function normalizeForType(type: HashDocumentType, value: string): string {
@@ -30,6 +39,9 @@ function normalizeForType(type: HashDocumentType, value: string): string {
         throw new Error('Cannot hash name: input normalizes to empty.');
       }
       return normalized;
+    }
+    case 'lawyer': {
+      return normalizeLawyerKey(value);
     }
   }
 }
