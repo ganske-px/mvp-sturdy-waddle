@@ -6,39 +6,27 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  AlertCircleIcon,
-  CheckCircle2Icon,
-  ClockIcon,
-  SearchIcon,
-  SparklesIcon,
+  AlertCircleIcon, CheckCircle2Icon, ClockIcon, SearchIcon, SparklesIcon,
 } from 'lucide-react';
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { type SearchByDocResult, type SearchType, searchByDoc } from './actions';
+import { type PersonSearchType, type SearchPersonResult, searchPerson } from './actions';
 
-const TYPE_LABELS: Record<SearchType, string> = {
+const TYPE_LABELS: Record<PersonSearchType, string> = {
   cpf: 'CPF',
-  cnpj: 'CNPJ',
   name: 'Nome',
 };
 
-const TYPE_DESCRIPTIONS: Record<SearchType, string> = {
-  cpf: 'Pessoa física — KYC',
-  cnpj: 'Pessoa jurídica — KYB',
-  name: 'Nome completo — KYE',
+const TYPE_DESCRIPTIONS: Record<PersonSearchType, string> = {
+  cpf: 'Pessoa física por CPF',
+  name: 'Pessoa física por nome',
 };
 
-const PLACEHOLDERS: Record<SearchType, string> = {
+const PLACEHOLDERS: Record<PersonSearchType, string> = {
   cpf: '123.456.789-10',
-  cnpj: '12.345.678/0001-99',
   name: 'João Silva',
 };
 
@@ -61,12 +49,12 @@ function timeAgo(iso: string): string {
 }
 
 async function submitAction(
-  _previous: SearchByDocResult | null,
+  _previous: SearchPersonResult | null,
   formData: FormData,
-): Promise<SearchByDocResult> {
-  const type = (formData.get('type') as SearchType | null) ?? 'cpf';
+): Promise<SearchPersonResult> {
+  const type = (formData.get('type') as PersonSearchType | null) ?? 'cpf';
   const rawInput = String(formData.get('q') ?? '');
-  return searchByDoc({ type, rawInput });
+  return searchPerson({ type, rawInput });
 }
 
 function SubmitButton() {
@@ -79,12 +67,9 @@ function SubmitButton() {
   );
 }
 
-export function SearchClient() {
-  const [type, setType] = useState<SearchType>('cpf');
-  const [state, formAction] = useActionState<SearchByDocResult | null, FormData>(
-    submitAction,
-    null,
-  );
+export function PersonSearchClient() {
+  const [type, setType] = useState<PersonSearchType>('cpf');
+  const [state, formAction] = useActionState<SearchPersonResult | null, FormData>(submitAction, null);
 
   return (
     <div className="flex flex-col gap-5">
@@ -98,19 +83,19 @@ export function SearchClient() {
             <input type="hidden" name="type" value={type} />
 
             <div className="flex flex-col gap-2">
-              <Label>Tipo de documento</Label>
+              <Label>Tipo</Label>
               <div
                 className="inline-flex gap-0.5 rounded-xl border border-border bg-muted/50 p-1"
                 role="radiogroup"
                 aria-label="Tipo de consulta"
               >
-                {(['cpf', 'cnpj', 'name'] as const).map((t) => {
+                {(['cpf', 'name'] as const).map((t) => {
                   const active = type === t;
                   return (
                     <button
                       type="button"
                       key={t}
-                      // biome-ignore lint/a11y/useSemanticElements: visual segmented toggle; native radios can't render this layout, ARIA role preserves semantics
+                      // biome-ignore lint/a11y/useSemanticElements: visual segmented toggle
                       role="radio"
                       aria-checked={active}
                       onClick={() => setType(t)}
@@ -130,18 +115,13 @@ export function SearchClient() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="q">Termo</Label>
               <Input
-                id="q"
-                name="q"
-                placeholder={PLACEHOLDERS[type]}
-                autoComplete="off"
-                required
+                id="q" name="q" placeholder={PLACEHOLDERS[type]}
+                autoComplete="off" required
                 className={type === 'name' ? '' : 'font-mono tracking-tight'}
               />
             </div>
 
-            <div className="flex justify-end">
-              <SubmitButton />
-            </div>
+            <div className="flex justify-end"><SubmitButton /></div>
           </form>
         </CardContent>
       </Card>
@@ -165,13 +145,11 @@ export function SearchClient() {
               {state.ok ? (
                 state.cached ? (
                   <Badge variant="info">
-                    <ClockIcon />
-                    Em cache · {timeAgo(state.fetchedAt)}
+                    <ClockIcon />Em cache · {timeAgo(state.fetchedAt)}
                   </Badge>
                 ) : (
                   <Badge variant="success">
-                    <SparklesIcon />
-                    Resultado fresco
+                    <SparklesIcon />Resultado fresco
                   </Badge>
                 )
               ) : null}
@@ -184,7 +162,7 @@ export function SearchClient() {
                   <CheckCircle2Icon className="size-8 text-success" />
                   <p className="text-sm font-medium">Nenhum processo encontrado</p>
                   <p className="text-xs text-muted-foreground">
-                    O documento aparenta estar limpo no Predictus.
+                    O documento aparenta estar limpo na fonte de dados.
                   </p>
                 </div>
               ) : (

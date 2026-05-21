@@ -1,80 +1,58 @@
 'use server';
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
-import { requirePermission, type Service } from '@/lib/auth/permissions';
+import { requirePermission } from '@/lib/auth/permissions';
 import { hashDocument } from '@/lib/hash';
 import { getCachedResults, setCachedResults } from '@/lib/predictus/cache';
 import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import type { PredictusProcess } from '@/lib/predictus/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import {
-  format as formatCnpj,
-  isValid as isCnpjValid,
-  mask as maskCnpj,
-} from '@/lib/validators/cnpj';
 import { format as formatCpf, isValid as isCpfValid, mask as maskCpf } from '@/lib/validators/cpf';
 import { maskName } from '@/lib/validators/name';
 import { headers } from 'next/headers';
 
-export type SearchType = 'cpf' | 'cnpj' | 'name';
+export type PersonSearchType = 'cpf' | 'name';
 
-export type SearchByDocInput = {
-  type: SearchType;
-  rawInput: string;
-};
+export type SearchPersonInput = { type: PersonSearchType; rawInput: string };
 
-export type SearchByDocOk = {
+export type SearchPersonOk = {
   ok: true;
   results: PredictusProcess[];
   displayTerm: string;
-  searchType: SearchType;
+  searchType: PersonSearchType;
   cached: boolean;
   fetchedAt: string;
 };
 
-export type SearchByDocErr = {
-  ok: false;
-  error: string;
-};
+export type SearchPersonErr = { ok: false; error: string };
 
-export type SearchByDocResult = SearchByDocOk | SearchByDocErr;
+export type SearchPersonResult = SearchPersonOk | SearchPersonErr;
 
-export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocResult> {
+export async function searchPerson(input: SearchPersonInput): Promise<SearchPersonResult> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) {
-    return { ok: false, error: 'Not authenticated.' };
-  }
+  if (!user) return { ok: false, error: 'Não autenticado.' };
 
-  const requiredService: Service =
-    input.type === 'cnpj' ? 'search_company' : 'search_person';
-  // person covers both 'cpf' and 'name' searches per the spec.
-  await requirePermission(requiredService);
+  await requirePermission('search_person');
 
-  // Validate + normalize per type
   const trimmed = input.rawInput.trim();
-  if (!trimmed) return { ok: false, error: 'Search term is empty.' };
+  if (!trimmed) return { ok: false, error: 'Termo de busca vazio.' };
 
   let documentHash: string;
   let termPreview: string;
   let displayTerm: string;
 
   if (input.type === 'cpf') {
-    if (!isCpfValid(trimmed)) return { ok: false, error: 'Invalid CPF.' };
+    if (!isCpfValid(trimmed)) return { ok: false, error: 'CPF inválido.' };
     documentHash = hashDocument('cpf', trimmed);
     termPreview = maskCpf(trimmed);
     displayTerm = formatCpf(trimmed);
-  } else if (input.type === 'cnpj') {
-    if (!isCnpjValid(trimmed)) return { ok: false, error: 'Invalid CNPJ.' };
-    documentHash = hashDocument('cnpj', trimmed);
-    termPreview = maskCnpj(trimmed);
-    displayTerm = formatCnpj(trimmed);
   } else {
     if (trimmed.length < 3) {
-      return { ok: false, error: 'Name must have at least 3 characters.' };
+      return { ok: false, error: 'O nome precisa ter ao menos 3 caracteres.' };
     }
     documentHash = hashDocument('name', trimmed);
     termPreview = maskName(trimmed);
@@ -84,8 +62,6 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
   const admin = createAdminClient();
   const requestContext = extractRequestContext(await headers());
 
-  // Audit log BEFORE any external call — we want a trail of the attempt
-  // regardless of whether cache, Predictus, or the database fail.
   await writeAuditLog(
     {
       userId: user.id,
@@ -99,13 +75,11 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     { allowFailure: true },
   );
 
-  // Cache lookup. A cache miss is silently absorbed — failing on cache infra
-  // would block the operator unnecessarily.
   let cached: { results: PredictusProcess[]; fetchedAt: string } | null = null;
   try {
     cached = await getCachedResults(admin, documentHash);
   } catch (e) {
-    console.warn('predictus_cache lookup failed, falling through to Predictus:', e);
+    console.warn('cache lookup failed:', e);
   }
 
   if (cached) {
@@ -126,7 +100,6 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     };
   }
 
-  // Cache miss — call Predictus.
   let results: PredictusProcess[];
   const fetchedAt = new Date().toISOString();
   try {
@@ -134,11 +107,9 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     results =
       input.type === 'cpf'
         ? await client.searchByCpf(trimmed.replace(/\D/g, ''))
-        : input.type === 'cnpj'
-          ? await client.searchByCnpj(trimmed.replace(/\D/g, ''))
-          : await client.searchByName(trimmed);
+        : await client.searchByName(trimmed);
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown Predictus error.';
+    const message = e instanceof Error ? e.message : 'Erro na consulta.';
     await supabase.from('searches').insert({
       user_id: user.id,
       search_type: input.type,
@@ -150,12 +121,10 @@ export async function searchByDoc(input: SearchByDocInput): Promise<SearchByDocR
     return { ok: false, error: message };
   }
 
-  // Best-effort cache write. A failure here only loses the cache — the
-  // operator still sees their results.
   try {
     await setCachedResults(admin, documentHash, input.type, results);
   } catch (e) {
-    console.warn('predictus_cache write failed:', e);
+    console.warn('cache write failed:', e);
   }
 
   await supabase.from('searches').insert({
