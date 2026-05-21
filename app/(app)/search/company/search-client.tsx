@@ -20,7 +20,7 @@ import {
   SearchIcon,
   SparklesIcon,
 } from 'lucide-react';
-import { useActionState } from 'react';
+import { useActionState, useEffect, useRef } from 'react';
 import { useFormStatus } from 'react-dom';
 import { type SearchByCnpjResult, searchByCnpj } from './actions';
 
@@ -59,11 +59,24 @@ function SubmitButton() {
   );
 }
 
-export function CompanySearchClient() {
+export function CompanySearchClient({
+  initialQuery = '',
+}: {
+  initialQuery?: string;
+}) {
   const [state, formAction] = useActionState<SearchByCnpjResult | null, FormData>(
     submitAction,
     null,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  const autoSubmittedRef = useRef(false);
+
+  useEffect(() => {
+    if (autoSubmittedRef.current) return;
+    if (!initialQuery) return;
+    autoSubmittedRef.current = true;
+    formRef.current?.requestSubmit();
+  }, [initialQuery]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -73,12 +86,13 @@ export function CompanySearchClient() {
           <CardDescription>Pessoa jurídica por CNPJ</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={formAction} className="flex flex-col gap-5">
+          <form ref={formRef} action={formAction} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
               <Label htmlFor="q">CNPJ</Label>
               <Input
                 id="q"
                 name="q"
+                defaultValue={initialQuery}
                 placeholder="12.345.678/0001-99"
                 autoComplete="off"
                 required

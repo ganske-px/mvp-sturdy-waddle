@@ -20,7 +20,7 @@ import {
   SearchIcon,
   SparklesIcon,
 } from 'lucide-react';
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { type PersonSearchType, type SearchPersonResult, searchPerson } from './actions';
 
@@ -76,12 +76,27 @@ function SubmitButton() {
   );
 }
 
-export function PersonSearchClient() {
-  const [type, setType] = useState<PersonSearchType>('cpf');
+export function PersonSearchClient({
+  initialQuery = '',
+  initialType = 'cpf',
+}: {
+  initialQuery?: string;
+  initialType?: PersonSearchType;
+}) {
+  const [type, setType] = useState<PersonSearchType>(initialType);
   const [state, formAction] = useActionState<SearchPersonResult | null, FormData>(
     submitAction,
     null,
   );
+  const formRef = useRef<HTMLFormElement>(null);
+  const autoSubmittedRef = useRef(false);
+
+  useEffect(() => {
+    if (autoSubmittedRef.current) return;
+    if (!initialQuery) return;
+    autoSubmittedRef.current = true;
+    formRef.current?.requestSubmit();
+  }, [initialQuery]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -91,7 +106,7 @@ export function PersonSearchClient() {
           <CardDescription>{TYPE_DESCRIPTIONS[type]}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={formAction} className="flex flex-col gap-5">
+          <form ref={formRef} action={formAction} className="flex flex-col gap-5">
             <input type="hidden" name="type" value={type} />
 
             <div className="flex flex-col gap-2">
@@ -129,6 +144,7 @@ export function PersonSearchClient() {
               <Input
                 id="q"
                 name="q"
+                defaultValue={initialQuery}
                 placeholder={PLACEHOLDERS[type]}
                 autoComplete="off"
                 required

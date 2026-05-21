@@ -2,7 +2,14 @@ import { CompanySearchClient } from './search-client';
 
 export const metadata = { title: 'Buscar empresa — Radar PX' };
 
-export default function CompanySearchPage() {
+export default async function CompanySearchPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const sp = await searchParams;
+  const initialQuery = sp.q?.trim() ?? '';
+
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-12">
       <header className="flex flex-col gap-2">
@@ -16,7 +23,7 @@ export default function CompanySearchPage() {
           Consulta processual por CNPJ. Resultados são guardados em cache por 30 dias.
         </p>
       </header>
-      <CompanySearchClient />
+      <CompanySearchClient initialQuery={initialQuery} />
     </main>
   );
 }

@@ -1,5 +1,5 @@
 import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
-import { HomeModules } from './home-modules';
+import { SmartSearch } from './smart-search';
 
 export const metadata = { title: 'Radar PX' };
 
@@ -8,24 +8,31 @@ export default async function HomePage() {
   const permissions = await listUserPermissions(user.id);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-6 py-14">
+    <main className="relative mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-4xl flex-col justify-center gap-12 px-6 py-20 sm:py-24">
+      <div className="pointer-events-none absolute inset-x-0 top-24 -z-10 mx-auto h-px max-w-3xl bg-gradient-to-r from-transparent via-border to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-24 -z-10 mx-auto h-px max-w-3xl bg-gradient-to-r from-transparent via-border to-transparent" />
+
       <header className="flex flex-col gap-3">
         <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
-          PX Center · Compliance
+          Radar PX · Compliance
         </span>
-        <h1 className="font-heading text-4xl font-semibold tracking-tight text-foreground sm:text-[2.75rem]">
-          Background check sob radar.
+        <h1 className="font-heading text-[2rem] font-semibold tracking-tight text-foreground sm:text-[2.5rem]">
+          Sobre quem você quer{' '}
+          <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            saber
+          </span>
+          ?
         </h1>
-        <p className="max-w-2xl text-base text-muted-foreground">
-          Consulte processos judiciais por CPF, CNPJ ou nome — com cache, auditoria e rate-limit já
-          integrados. Pensado para checagens de KYC, KYB e KYE.
+        <p className="max-w-xl text-sm text-muted-foreground sm:text-base">
+          Um campo, três tipos. Digite o CPF, CNPJ ou nome — o Radar entende e consulta na fonte
+          certa.
         </p>
       </header>
 
-      <HomeModules role={user.role} permissions={[...permissions]} />
+      <SmartSearch role={user.role} permissions={[...permissions]} />
 
-      <footer className="border-t border-border/60 pt-6 text-xs text-muted-foreground">
-        Dados retidos por 30 dias · CPF e CNPJ nunca persistidos em texto claro.
+      <footer className="text-[0.7rem] uppercase tracking-[0.18em] text-muted-foreground/70">
+        Dados das pesquisas são retidos por 30 dias · Documentos jamais persistidos em texto claro
       </footer>
     </main>
   );
