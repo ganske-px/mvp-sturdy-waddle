@@ -101,8 +101,6 @@ function LawyerNode({ data }: NodeProps<NodeData>) {
   );
 }
 
-const NODE_TYPES = { cpf: CpfNode, cnpj: CnpjNode, lawyer: LawyerNode };
-
 const TYPE_ORDER: readonly NodeType[] = ['cpf', 'cnpj', 'lawyer'];
 const TYPE_LABELS: Record<NodeType, string> = {
   cpf: 'Pessoas',
@@ -251,6 +249,12 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set());
   const [minOccurrences, setMinOccurrences] = useState(1);
+
+  // React Flow warns when nodeTypes is a new reference each render; with HMR
+  // a module-level const gets recreated on every Fast Refresh. Binding the
+  // map to the component instance via useMemo silences the false positive.
+  const nodeTypes = useMemo(() => ({ cpf: CpfNode, cnpj: CnpjNode, lawyer: LawyerNode }), []);
+  const fitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
 
   const { positions, communityById, hubSet, maxOccurrences } = useMemo(
     () => computeLayout(subgraph),
@@ -457,10 +461,10 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
           <ReactFlow
             nodes={finalNodes}
             edges={finalEdges}
-            nodeTypes={NODE_TYPES}
+            nodeTypes={nodeTypes}
             onNodeClick={(_, n) => setSelectedHash(n.id)}
             fitView
-            fitViewOptions={{ padding: 0.2 }}
+            fitViewOptions={fitViewOptions}
             minZoom={0.05}
           >
             <Background gap={24} />
