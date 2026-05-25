@@ -3,12 +3,48 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { encryptLabel } from './label-crypto';
 import type { ExtractedEdge, ExtractedNode } from './types';
 
+// How many encrypt_graph_label RPCs to fire in parallel. Each call is a
+// network round-trip to PostgREST; sequential iteration was the difference
+// between a sub-second upsert and a 4-minute timeout on a 700-node payload
+// (which is enough to fail any serverless function quota).
+const ENCRYPT_BATCH_SIZE = 50;
+
 function hexCiphertextToBase64(hex: string): string {
   // Supabase returns bytea as the prefixed-hex string '\x<HEX>'. Strip the
   // prefix and re-encode as base64 for the upsert_graph RPC, which decodes
   // base64 internally.
   const cleaned = hex.startsWith('\\x') ? hex.slice(2) : hex;
   return Buffer.from(cleaned, 'hex').toString('base64');
+}
+
+type NodeIn = {
+  node_hash: string;
+  node_type: string;
+  encrypted_label_b64: string;
+  masked_preview: string;
+};
+
+async function encryptNodesBatched(
+  client: SupabaseClient<Database>,
+  nodes: ExtractedNode[],
+): Promise<NodeIn[]> {
+  const result: NodeIn[] = [];
+  for (let i = 0; i < nodes.length; i += ENCRYPT_BATCH_SIZE) {
+    const batch = nodes.slice(i, i + ENCRYPT_BATCH_SIZE);
+    const encrypted = await Promise.all(
+      batch.map(async (node) => {
+        const hexCipher = await encryptLabel(client, JSON.stringify(node.label));
+        return {
+          node_hash: node.nodeHash,
+          node_type: node.nodeType,
+          encrypted_label_b64: hexCiphertextToBase64(hexCipher),
+          masked_preview: node.maskedPreview,
+        };
+      }),
+    );
+    result.push(...encrypted);
+  }
+  return result;
 }
 
 export async function upsertGraph(
@@ -18,16 +54,7 @@ export async function upsertGraph(
 ): Promise<void> {
   if (nodes.length === 0 && edges.length === 0) return;
 
-  const nodes_in: Array<Record<string, string>> = [];
-  for (const node of nodes) {
-    const hexCipher = await encryptLabel(client, JSON.stringify(node.label));
-    nodes_in.push({
-      node_hash: node.nodeHash,
-      node_type: node.nodeType,
-      encrypted_label_b64: hexCiphertextToBase64(hexCipher),
-      masked_preview: node.maskedPreview,
-    });
-  }
+  const nodes_in = await encryptNodesBatched(client, nodes);
 
   const edges_in = edges.map((e) => ({
     source_hash: e.sourceHash,
