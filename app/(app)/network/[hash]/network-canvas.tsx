@@ -172,7 +172,16 @@ function classifyEdge(edge: GraphEdgeDto): EdgeStyleKind {
   return 'co_party_unknown';
 }
 
-const TOP_HUBS = 5;
+const MAX_HUBS = 5;
+
+// Scale the number of "hubs" highlighted to the visible neighbour count so
+// sparse views don't end up with most nodes ringed in community colour. With
+// just 8 neighbours every node was being flagged a hub — visual noise instead
+// of signal.
+function hubBudget(neighbourCount: number): number {
+  if (neighbourCount < 6) return 0;
+  return Math.min(MAX_HUBS, Math.floor((neighbourCount - 5) / 3));
+}
 
 // Builds a graphology graph for the *visible* subset, runs Louvain for
 // community assignment, then ForceAtlas2 for positions. Recomputed every
@@ -210,16 +219,22 @@ function computeLayout(
     }
   }
 
-  // Seed with a small scatter so FA2 has gradient to work with. Centre stays
-  // pinned at origin via the post-layout translate below.
+  // Seed with a wide scatter so FA2 has gradient to work with even on small
+  // graphs — a tight initial cluster + low repulsion would otherwise leave
+  // 5-10 nodes piled on top of each other.
+  const seedRadius = Math.max(400, g.order * 30);
   for (const node of g.nodes()) {
     if (node === center.hash) {
       g.setNodeAttribute(node, 'x', 0);
       g.setNodeAttribute(node, 'y', 0);
     } else {
-      g.setNodeAttribute(node, 'x', (Math.random() - 0.5) * 100);
-      g.setNodeAttribute(node, 'y', (Math.random() - 0.5) * 100);
+      const angle = Math.random() * Math.PI * 2;
+      const r = seedRadius * (0.5 + Math.random() * 0.5);
+      g.setNodeAttribute(node, 'x', r * Math.cos(angle));
+      g.setNodeAttribute(node, 'y', r * Math.sin(angle));
     }
+    // Approximate rendered radius — used by adjustSizes to avoid overlap.
+    g.setNodeAttribute(node, 'size', node === center.hash ? 30 : 22);
   }
 
   try {
@@ -232,27 +247,30 @@ function computeLayout(
     // Louvain can throw on degenerate graphs; carry on without communities.
   }
 
-  // Iteration count scales gently with graph size so dense subgraphs still
-  // converge while small filtered views stay snappy.
-  const iterations = Math.min(220, Math.max(60, g.order * 2));
+  const iterations = Math.min(300, Math.max(120, g.order * 3));
   try {
     forceAtlas2.assign(g, {
       iterations,
       settings: {
-        gravity: 1,
-        scalingRatio: 10,
+        // Higher scalingRatio + lower gravity stops a 5–10 node graph from
+        // collapsing into a single overlapping stack. linLogMode keeps the
+        // overall scale sane for both 10-node and 700-node subgraphs.
+        gravity: 0.3,
+        scalingRatio: 80,
         strongGravityMode: false,
         barnesHutOptimize: true,
         barnesHutTheta: 0.5,
-        slowDown: 5,
-        linLogMode: false,
-        outboundAttractionDistribution: false,
-        adjustSizes: false,
-        edgeWeightInfluence: 1,
+        slowDown: 2,
+        linLogMode: true,
+        // Distributes hubs to the periphery instead of clumping with their
+        // neighbours — gives the centre breathing room.
+        outboundAttractionDistribution: true,
+        adjustSizes: true,
+        edgeWeightInfluence: 0.5,
       },
     });
   } catch {
-    // Fall back to the seeded random scatter.
+    // Fall back to the seeded scatter.
   }
 
   // Translate so the centre node sits at (0, 0) — keeps the visual focus on
@@ -274,11 +292,14 @@ function computeLayout(
     });
     weightedDegree.set(node, total);
   }
-  const ranked = [...weightedDegree.entries()]
-    .filter(([h]) => h !== center.hash)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, TOP_HUBS);
-  for (const [h] of ranked) hubSet.add(h);
+  const budget = hubBudget(visibleNeighbors.length);
+  if (budget > 0) {
+    const ranked = [...weightedDegree.entries()]
+      .filter(([h]) => h !== center.hash)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, budget);
+    for (const [h] of ranked) hubSet.add(h);
+  }
 
   return { positions, communityById, hubSet };
 }
