@@ -4,7 +4,7 @@ import Graph from 'graphology';
 import louvain from 'graphology-communities-louvain';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import { Building2, Filter, Scale, User } from 'lucide-react';
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -14,6 +14,8 @@ import ReactFlow, {
   type Node,
   type NodeProps,
   Position,
+  ReactFlowProvider,
+  useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { findShortestPath } from '@/lib/graph/path';
@@ -86,7 +88,7 @@ function NodeShell({
       style={shadow ? { boxShadow: shadow } : undefined}
     >
       <Handle type="target" position={Position.Top} className="opacity-0" />
-      <Icon className="size-3.5 shrink-0" />
+      <Icon className="size-3 shrink-0" />
       <span className="truncate font-medium">{data.dto.label.name ?? data.dto.maskedPreview}</span>
       <Handle type="source" position={Position.Bottom} className="opacity-0" />
     </div>
@@ -95,7 +97,7 @@ function NodeShell({
 
 function CpfNode({ data }: NodeProps<NodeData>) {
   // Centre node is meaningfully larger so it doesn't disappear in dense graphs.
-  const sizing = data.isCenter ? 'px-4 py-2.5 text-sm' : 'px-3 py-2 text-xs';
+  const sizing = data.isCenter ? 'px-3 py-1.5 text-[0.7rem]' : 'px-2 py-1 text-[0.6rem]';
   const center = data.isCenter
     ? 'border-primary ring-2 ring-primary bg-primary/25'
     : 'border-primary/60';
@@ -103,13 +105,13 @@ function CpfNode({ data }: NodeProps<NodeData>) {
     <NodeShell
       data={data}
       Icon={User}
-      baseClass={`flex max-w-[220px] items-center gap-2 rounded-full border bg-primary/15 ${sizing} ${center}`}
+      baseClass={`flex max-w-[160px] items-center gap-1.5 rounded-full border bg-primary/15 ${sizing} ${center}`}
     />
   );
 }
 
 function CnpjNode({ data }: NodeProps<NodeData>) {
-  const sizing = data.isCenter ? 'px-4 py-2.5 text-sm' : 'px-3 py-2 text-xs';
+  const sizing = data.isCenter ? 'px-3 py-1.5 text-[0.7rem]' : 'px-2 py-1 text-[0.6rem]';
   const center = data.isCenter
     ? 'border-accent ring-2 ring-accent bg-accent/25'
     : 'border-accent/60';
@@ -117,7 +119,7 @@ function CnpjNode({ data }: NodeProps<NodeData>) {
     <NodeShell
       data={data}
       Icon={Building2}
-      baseClass={`flex max-w-[220px] items-center gap-2 rounded-md border bg-accent/15 ${sizing} ${center}`}
+      baseClass={`flex max-w-[160px] items-center gap-1.5 rounded-md border bg-accent/15 ${sizing} ${center}`}
     />
   );
 }
@@ -127,7 +129,7 @@ function LawyerNode({ data }: NodeProps<NodeData>) {
     <NodeShell
       data={data}
       Icon={Scale}
-      baseClass="flex max-w-[220px] items-center gap-2 rounded-sm border border-border bg-muted px-3 py-2 text-xs"
+      baseClass="flex max-w-[160px] items-center gap-1.5 rounded-sm border border-border bg-muted px-2 py-1 text-[0.6rem]"
     />
   );
 }
@@ -282,6 +284,17 @@ function computeLayout(
 }
 
 export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
+  // ReactFlowProvider is needed so InnerCanvas can call useReactFlow().fitView
+  // when filters change — without it the camera stays parked on the old layout
+  // extent and the new (smaller) graph just looks tiny in the middle.
+  return (
+    <ReactFlowProvider>
+      <InnerCanvas subgraph={subgraph} />
+    </ReactFlowProvider>
+  );
+}
+
+function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [hoveredHash, setHoveredHash] = useState<string | null>(null);
   const [pathStart, setPathStart] = useState<string | null>(null);
@@ -293,6 +306,7 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   // map to the component instance via useMemo silences the false positive.
   const nodeTypes = useMemo(() => ({ cpf: CpfNode, cnpj: CnpjNode, lawyer: LawyerNode }), []);
   const fitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
+  const reactFlow = useReactFlow();
 
   // Defer the slider value so dragging through 100 stops doesn't kick off
   // 100 force-layout runs; React will skip stale updates and only land on
@@ -479,6 +493,17 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
       };
     });
   }, [subgraph.center, visibleNeighbors, positions, communityById, hubSet, spotlight, pathStart]);
+
+  // Re-fit the camera whenever the visible set changes. The layout has new
+  // positions but the viewport would otherwise stay parked on the old
+  // extent — leaving the remaining nodes huddled in one corner.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reactFlow.fitView is stable across renders
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      reactFlow.fitView({ padding: 0.2, duration: 400 });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [finalNodes.length, finalEdges.length, reactFlow]);
 
   function toggleType(t: NodeType) {
     setHiddenTypes((prev) => {
