@@ -17,7 +17,7 @@ export default async function NetworkPage({
   const decoded = decodeURIComponent(hash);
   const subgraph = await getSubgraph(decoded);
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex w-full max-w-screen-2xl flex-col gap-6 px-6 py-8">
       <NetworkHeader centerName={subgraph.center?.label.name ?? null} />
       <NetworkCanvas subgraph={subgraph} />
     </main>
