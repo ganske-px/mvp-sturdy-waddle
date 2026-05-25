@@ -1,13 +1,6 @@
-import { Badge } from '@/components/ui/badge';
+import { HistoryRows } from '@/components/history-rows';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createClient } from '@/lib/supabase/server';
 import { SearchIcon } from 'lucide-react';
 
@@ -15,24 +8,9 @@ export const metadata = {
   title: 'Histórico — Radar PX',
 };
 
-const TYPE_LABELS: Record<'cpf' | 'cnpj' | 'name', string> = {
-  cpf: 'CPF',
-  cnpj: 'CNPJ',
-  name: 'Nome',
-};
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 type SearchRow = {
   id: string;
+  document_hash: string;
   search_type: 'cpf' | 'cnpj' | 'name';
   term_preview: string;
   result_count: number;
@@ -44,7 +22,7 @@ export default async function HistoryPage() {
   const supabase = await createClient();
   const { data: searches, error } = await supabase
     .from('searches')
-    .select('id, search_type, term_preview, result_count, error_message, created_at')
+    .select('id, document_hash, search_type, term_preview, result_count, error_message, created_at')
     .order('created_at', { ascending: false })
     .limit(100)
     .returns<SearchRow[]>();
@@ -58,7 +36,10 @@ export default async function HistoryPage() {
         <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
           Histórico
         </h1>
-        <p className="text-muted-foreground">Últimas 100 consultas realizadas por você.</p>
+        <p className="text-muted-foreground">
+          Últimas 100 consultas realizadas por você. Clique em uma linha para reabrir o resultado em
+          cache.
+        </p>
       </header>
 
       <Card>
@@ -89,31 +70,7 @@ export default async function HistoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {searches.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
-                      {formatDateTime(s.created_at)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" size="sm">
-                        {TYPE_LABELS[s.search_type]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs">{s.term_preview}</span>
-                        {s.error_message ? (
-                          <Badge variant="destructive" size="sm">
-                            erro
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">
-                      {s.result_count}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                <HistoryRows searches={searches} />
               </TableBody>
             </Table>
           )}
