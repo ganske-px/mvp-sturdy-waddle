@@ -168,7 +168,7 @@ export function CompanySearchClient({
                   </TableHeader>
                   <TableBody>
                     {state.results.map((p, i) => (
-                      <TableRow key={p.numeroProcessoUnico ?? `idx-${i}`}>
+                      <TableRow key={`${p.numeroProcessoUnico ?? 'no-num'}-${i}`}>
                         <TableCell className="font-mono text-xs">
                           {p.numeroProcessoUnico ?? '—'}
                         </TableCell>
