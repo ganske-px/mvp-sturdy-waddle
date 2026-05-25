@@ -3,6 +3,10 @@ import { getSubgraph } from './actions';
 import { NetworkCanvas } from './network-canvas';
 import { NetworkHeader } from './network-header';
 
+export const metadata = {
+  title: 'Rede — Radar PX',
+};
+
 export default async function NetworkPage({
   params,
 }: {
@@ -13,9 +17,9 @@ export default async function NetworkPage({
   const decoded = decodeURIComponent(hash);
   const subgraph = await getSubgraph(decoded);
   return (
-    <div className="flex flex-col gap-4">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
       <NetworkHeader centerName={subgraph.center?.label.name ?? null} />
       <NetworkCanvas subgraph={subgraph} />
-    </div>
+    </main>
   );
 }

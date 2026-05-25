@@ -119,8 +119,13 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
 
   if (!subgraph.center) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-muted/30 p-10 text-center text-sm text-muted-foreground">
-        Este nó ainda não tem conexões mapeadas.
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
+        <p className="text-sm font-medium">Este nó ainda não tem rede mapeada</p>
+        <p className="max-w-md text-xs text-muted-foreground">
+          A rede é construída a partir das partes e advogados que aparecem nos processos retornados
+          pela consulta. Faça uma busca pelo documento (ou aguarde uma busca que o mencione como
+          co-parte) para que ele apareça aqui.
+        </p>
       </div>
     );
   }
