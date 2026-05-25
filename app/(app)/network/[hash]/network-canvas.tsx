@@ -16,6 +16,7 @@ import ReactFlow, {
   Position,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { findShortestPath } from '@/lib/graph/path';
 import type { NodeType } from '@/lib/graph/types';
 import type { GraphEdgeDto, GraphNodeDto, SubgraphDto } from './actions';
 import { NodeDetailPanel } from './node-detail-panel';
@@ -25,6 +26,14 @@ type NodeData = {
   isCenter: boolean;
   isHub: boolean;
   community: number;
+  /** true when there's an active spotlight (hover/path) and this node is in it */
+  inSpotlight: boolean;
+  /** true when a spotlight is active and this node is NOT in it */
+  dimmed: boolean;
+  /** true when this node is part of the active path */
+  onPath: boolean;
+  /** true when this node is the path origin */
+  isPathStart: boolean;
 };
 
 // Stable palette for community accent rings. Cycles if there are more
@@ -47,6 +56,20 @@ function communityColor(id: number): string {
   return COMMUNITY_COLORS[id % COMMUNITY_COLORS.length] ?? '#71717a';
 }
 
+const PATH_HIGHLIGHT = '#fbbf24'; // amber-400
+
+function nodeBoxShadow(data: NodeData): string | undefined {
+  // Path origin gets a bright amber halo so it stays anchored visually.
+  if (data.isPathStart) return `0 0 0 3px ${PATH_HIGHLIGHT}, 0 0 18px ${PATH_HIGHLIGHT}55`;
+  // Other nodes on the path: amber ring.
+  if (data.onPath) return `0 0 0 2.5px ${PATH_HIGHLIGHT}`;
+  // Hubs (top-5 by weighted degree) wear their community colour — the only
+  // place community colour appears, so it never competes with type colour
+  // on every node.
+  if (data.isHub) return `0 0 0 3px ${communityColor(data.community)}`;
+  return undefined;
+}
+
 function NodeShell({
   data,
   baseClass,
@@ -56,13 +79,12 @@ function NodeShell({
   baseClass: string;
   Icon: typeof User;
 }) {
-  const ringStyle = data.isHub
-    ? { boxShadow: `0 0 0 3px ${communityColor(data.community)}` }
-    : data.community >= 0
-      ? { boxShadow: `0 0 0 1.5px ${communityColor(data.community)}` }
-      : undefined;
+  const shadow = nodeBoxShadow(data);
   return (
-    <div className={baseClass} style={ringStyle}>
+    <div
+      className={`transition-opacity ${baseClass} ${data.dimmed ? 'opacity-20' : 'opacity-100'}`}
+      style={shadow ? { boxShadow: shadow } : undefined}
+    >
       <Handle type="target" position={Position.Top} className="opacity-0" />
       <Icon className="size-3.5 shrink-0" />
       <span className="truncate font-medium">{data.dto.label.name ?? data.dto.maskedPreview}</span>
@@ -72,21 +94,30 @@ function NodeShell({
 }
 
 function CpfNode({ data }: NodeProps<NodeData>) {
+  // Centre node is meaningfully larger so it doesn't disappear in dense graphs.
+  const sizing = data.isCenter ? 'px-4 py-2.5 text-sm' : 'px-3 py-2 text-xs';
+  const center = data.isCenter
+    ? 'border-primary ring-2 ring-primary bg-primary/25'
+    : 'border-primary/60';
   return (
     <NodeShell
       data={data}
       Icon={User}
-      baseClass={`flex max-w-[200px] items-center gap-2 rounded-full border bg-primary/15 px-3 py-2 text-xs ${data.isCenter ? 'border-primary ring-2 ring-primary' : 'border-primary/60'}`}
+      baseClass={`flex max-w-[220px] items-center gap-2 rounded-full border bg-primary/15 ${sizing} ${center}`}
     />
   );
 }
 
 function CnpjNode({ data }: NodeProps<NodeData>) {
+  const sizing = data.isCenter ? 'px-4 py-2.5 text-sm' : 'px-3 py-2 text-xs';
+  const center = data.isCenter
+    ? 'border-accent ring-2 ring-accent bg-accent/25'
+    : 'border-accent/60';
   return (
     <NodeShell
       data={data}
       Icon={Building2}
-      baseClass={`flex max-w-[200px] items-center gap-2 rounded-md border bg-accent/15 px-3 py-2 text-xs ${data.isCenter ? 'border-accent ring-2 ring-accent' : 'border-accent/60'}`}
+      baseClass={`flex max-w-[220px] items-center gap-2 rounded-md border bg-accent/15 ${sizing} ${center}`}
     />
   );
 }
@@ -96,7 +127,7 @@ function LawyerNode({ data }: NodeProps<NodeData>) {
     <NodeShell
       data={data}
       Icon={Scale}
-      baseClass="flex max-w-[200px] items-center gap-2 rounded-sm border border-border bg-muted px-3 py-2 text-xs"
+      baseClass="flex max-w-[220px] items-center gap-2 rounded-sm border border-border bg-muted px-3 py-2 text-xs"
     />
   );
 }
@@ -252,6 +283,8 @@ function computeLayout(
 
 export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
+  const [hoveredHash, setHoveredHash] = useState<string | null>(null);
+  const [pathStart, setPathStart] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set());
   const [minOccurrences, setMinOccurrences] = useState(1);
 
@@ -334,25 +367,91 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     return computeLayout(subgraph.center, visibleNeighbors, keptEdgeDtos);
   }, [subgraph.center, visibleNeighbors, keptEdgeDtos]);
 
+  // Shortest path: only computed when both endpoints are set and distinct.
+  // Runs on the *visible* edges so the path respects active filters — if the
+  // user raised the slider so the path no longer exists, they see "no path".
+  const path = useMemo(() => {
+    if (!pathStart || !selectedHash || pathStart === selectedHash) return null;
+    return findShortestPath(keptEdgeDtos, pathStart, selectedHash);
+  }, [pathStart, selectedHash, keptEdgeDtos]);
+
+  // Spotlight: when a path is active, that's the focus; otherwise hover.
+  // Used to dim everything outside the focus.
+  const spotlight = useMemo(() => {
+    const nodes = new Set<string>();
+    const edges = new Set<number>();
+    if (path) {
+      for (const h of path.nodes) nodes.add(h);
+      for (const i of path.edgeIndices) edges.add(i);
+      return { nodes, edges, kind: 'path' as const };
+    }
+    if (hoveredHash) {
+      nodes.add(hoveredHash);
+      for (let i = 0; i < keptEdgeDtos.length; i++) {
+        const e = keptEdgeDtos[i];
+        if (!e) continue;
+        if (e.source === hoveredHash || e.target === hoveredHash) {
+          edges.add(i);
+          nodes.add(e.source);
+          nodes.add(e.target);
+        }
+      }
+      return { nodes, edges, kind: 'hover' as const };
+    }
+    return null;
+  }, [path, hoveredHash, keptEdgeDtos]);
+
+  const pathNodesByHash = useMemo(() => {
+    const m = new Map<string, GraphNodeDto>();
+    if (subgraph.center) m.set(subgraph.center.hash, subgraph.center);
+    for (const n of subgraph.neighbors) m.set(n.hash, n);
+    return m;
+  }, [subgraph.center, subgraph.neighbors]);
+
+  const pathStartNode = pathStart ? (pathNodesByHash.get(pathStart) ?? null) : null;
+
+  const selectedNode =
+    selectedHash === null
+      ? null
+      : subgraph.center?.hash === selectedHash
+        ? subgraph.center
+        : (subgraph.neighbors.find((n) => n.hash === selectedHash) ?? null);
+
+  const selectedCommunity = selectedHash ? (communityById.get(selectedHash) ?? -1) : -1;
+  const membersInSameCommunity = useMemo(() => {
+    if (selectedCommunity < 0) return [];
+    const out: GraphNodeDto[] = [];
+    if (subgraph.center && communityById.get(subgraph.center.hash) === selectedCommunity) {
+      out.push(subgraph.center);
+    }
+    for (const n of visibleNeighbors) {
+      if (communityById.get(n.hash) === selectedCommunity) out.push(n);
+    }
+    return out;
+  }, [selectedCommunity, subgraph.center, visibleNeighbors, communityById]);
+
   const finalEdges = useMemo<Edge[]>(
     () =>
       keptEdgeDtos.map((e, i) => {
         const kind = classifyEdge(e);
         const style = EDGE_STYLES[kind];
         const widthBase = Math.min(5, 1 + (e.evidence.occurrences ?? 1) * 0.4);
+        const onPath = spotlight?.kind === 'path' && spotlight.edges.has(i);
+        const inHover = spotlight?.kind === 'hover' && spotlight.edges.has(i);
+        const dimmed = spotlight !== null && !spotlight.edges.has(i);
         return {
           id: `e-${i}`,
           source: e.source,
           target: e.target,
           style: {
-            stroke: style.stroke,
-            strokeDasharray: style.strokeDasharray,
-            strokeWidth: widthBase,
-            opacity: 0.85,
+            stroke: onPath ? PATH_HIGHLIGHT : style.stroke,
+            strokeDasharray: onPath ? undefined : style.strokeDasharray,
+            strokeWidth: onPath ? widthBase + 1.5 : widthBase,
+            opacity: dimmed ? 0.08 : inHover || onPath ? 1 : 0.85,
           },
         };
       }),
-    [keptEdgeDtos],
+    [keptEdgeDtos, spotlight],
   );
 
   const finalNodes = useMemo<Node<NodeData>[]>(() => {
@@ -360,6 +459,9 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     const pool: GraphNodeDto[] = [subgraph.center, ...visibleNeighbors];
     return pool.map((n) => {
       const pos = positions.get(n.hash) ?? { x: 0, y: 0 };
+      const inSpotlight = spotlight?.nodes.has(n.hash) ?? false;
+      const dimmed = spotlight !== null && !inSpotlight;
+      const onPath = spotlight?.kind === 'path' && spotlight.nodes.has(n.hash);
       return {
         id: n.hash,
         type: n.type,
@@ -369,17 +471,14 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
           isCenter: n.hash === subgraph.center?.hash,
           isHub: hubSet.has(n.hash),
           community: communityById.get(n.hash) ?? -1,
+          inSpotlight,
+          dimmed,
+          onPath,
+          isPathStart: n.hash === pathStart,
         },
       };
     });
-  }, [subgraph.center, visibleNeighbors, positions, communityById, hubSet]);
-
-  const selected =
-    selectedHash === null
-      ? null
-      : subgraph.center?.hash === selectedHash
-        ? subgraph.center
-        : (subgraph.neighbors.find((n) => n.hash === selectedHash) ?? null);
+  }, [subgraph.center, visibleNeighbors, positions, communityById, hubSet, spotlight, pathStart]);
 
   function toggleType(t: NodeType) {
     setHiddenTypes((prev) => {
@@ -491,6 +590,9 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
             edges={finalEdges}
             nodeTypes={nodeTypes}
             onNodeClick={(_, n) => setSelectedHash(n.id)}
+            onNodeMouseEnter={(_, n) => setHoveredHash(n.id)}
+            onNodeMouseLeave={() => setHoveredHash(null)}
+            onPaneClick={() => setHoveredHash(null)}
             fitView
             fitViewOptions={fitViewOptions}
             minZoom={0.05}
@@ -500,7 +602,20 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
             <MiniMap pannable zoomable />
           </ReactFlow>
         </div>
-        <NodeDetailPanel node={selected} center={subgraph.center} edges={subgraph.edges} />
+        <NodeDetailPanel
+          node={selectedNode}
+          center={subgraph.center}
+          edges={subgraph.edges}
+          community={selectedCommunity}
+          membersInSameCommunity={membersInSameCommunity}
+          pathStart={pathStart}
+          pathStartNode={pathStartNode}
+          path={path}
+          pathNodesByHash={pathNodesByHash}
+          onSetPathStart={setPathStart}
+          onClearPathStart={() => setPathStart(null)}
+          onPickNode={setSelectedHash}
+        />
       </div>
     </div>
   );
