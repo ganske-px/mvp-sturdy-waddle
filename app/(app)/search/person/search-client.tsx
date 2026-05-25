@@ -227,7 +227,9 @@ export function PersonSearchClient({
                         </TableCell>
                         <TableCell className="text-sm">{p.tribunal ?? '—'}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {p.classeProcessual ?? '—'}
+                          {typeof p.classeProcessual === 'object'
+                            ? (p.classeProcessual.nome ?? '—')
+                            : (p.classeProcessual ?? '—')}
                         </TableCell>
                         <TableCell className="text-right font-medium tabular-nums">
                           {formatBRL(p.valorCausa?.valor)}

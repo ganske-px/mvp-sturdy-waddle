@@ -5,7 +5,7 @@ export type PredictusSearchType = 'cpf' | 'cnpj' | 'name';
 export type PredictusProcess = {
   numeroProcessoUnico?: string;
   tribunal?: string;
-  classeProcessual?: string;
+  classeProcessual?: string | { nome?: string; codigoCNJ?: string };
   valorCausa?: { valor?: number | string };
   partes?: unknown[];
   movimentos?: unknown[];
