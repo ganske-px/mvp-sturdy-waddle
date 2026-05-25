@@ -9,10 +9,20 @@ import { setCachedResults } from '@/lib/predictus/cache';
 import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import type { Database } from '@/lib/supabase/types';
 import { isValid as isCnpjValid } from '@/lib/validators/cnpj';
 import { isValid as isCpfValid } from '@/lib/validators/cpf';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+
+// Each hash is 64 chars; PostgREST .in() builds a URL-encoded list, and going
+// past ~370 hashes blew the URL past fetch's limit ("TypeError: fetch failed").
+// Chunk to 100 — comfortably below the limit and only a few round-trips.
+const HASH_QUERY_BATCH = 100;
+// decryptLabel is one RPC round-trip per node; serial loops would balloon the
+// page render to minutes on dense subgraphs.
+const DECRYPT_BATCH = 50;
 
 export type GraphNodeDto = {
   hash: string;
@@ -54,6 +64,44 @@ type EdgeRow = {
 };
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+type ServerClient = SupabaseClient<Database>;
+
+async function fetchNodesInChunks(supabase: ServerClient, hashes: string[]): Promise<NodeRow[]> {
+  if (hashes.length === 0) return [];
+  const result: NodeRow[] = [];
+  for (let i = 0; i < hashes.length; i += HASH_QUERY_BATCH) {
+    const chunk = hashes.slice(i, i + HASH_QUERY_BATCH);
+    const { data, error } = await supabase
+      .from('graph_nodes')
+      .select('node_hash, node_type, encrypted_label, masked_preview, last_seen_at')
+      .in('node_hash', chunk)
+      .returns<NodeRow[]>();
+    if (error) throw new Error(`fetchNodesInChunks failed: ${error.message}`);
+    if (data) result.push(...data);
+  }
+  return result;
+}
+
+async function fetchFreshCacheHashes(
+  supabase: ServerClient,
+  hashes: string[],
+  nowIso: string,
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (hashes.length === 0) return out;
+  for (let i = 0; i < hashes.length; i += HASH_QUERY_BATCH) {
+    const chunk = hashes.slice(i, i + HASH_QUERY_BATCH);
+    const { data, error } = await supabase
+      .from('predictus_cache')
+      .select('document_hash')
+      .in('document_hash', chunk)
+      .gt('expires_at', nowIso)
+      .returns<Array<{ document_hash: string }>>();
+    if (error) throw new Error(`fetchFreshCacheHashes failed: ${error.message}`);
+    for (const r of data ?? []) out.add(r.document_hash);
+  }
+  return out;
+}
 
 async function rowToDto(
   admin: AdminClient,
@@ -75,6 +123,20 @@ async function rowToDto(
     inCache: row.node_type !== 'lawyer' && cacheHashes.has(row.node_hash),
     lastSeenAt: row.last_seen_at,
   };
+}
+
+async function rowsToDtosBatched(
+  admin: AdminClient,
+  rows: NodeRow[],
+  cacheHashes: Set<string>,
+): Promise<GraphNodeDto[]> {
+  const result: GraphNodeDto[] = [];
+  for (let i = 0; i < rows.length; i += DECRYPT_BATCH) {
+    const batch = rows.slice(i, i + DECRYPT_BATCH);
+    const dtos = await Promise.all(batch.map((r) => rowToDto(admin, r, cacheHashes)));
+    result.push(...dtos);
+  }
+  return result;
 }
 
 export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
@@ -118,34 +180,14 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
     new Set(edges.flatMap((e) => [e.source_hash, e.target_hash]).filter((h) => h !== centerHash)),
   );
 
-  const { data: neighborRows } =
-    neighborHashes.length === 0
-      ? { data: [] as NodeRow[] }
-      : await supabase
-          .from('graph_nodes')
-          .select('node_hash, node_type, encrypted_label, masked_preview, last_seen_at')
-          .in('node_hash', neighborHashes)
-          .returns<NodeRow[]>();
+  const neighborRows = await fetchNodesInChunks(supabase, neighborHashes);
 
-  const hashesToCheckCache = [centerRow.node_hash, ...neighborHashes].filter(
-    (h) => !h.startsWith('lawyer:'),
-  );
   const nowIso = new Date().toISOString();
-  const { data: cacheRows } =
-    hashesToCheckCache.length === 0
-      ? { data: [] as Array<{ document_hash: string }> }
-      : await supabase
-          .from('predictus_cache')
-          .select('document_hash')
-          .in('document_hash', hashesToCheckCache)
-          .gt('expires_at', nowIso)
-          .returns<Array<{ document_hash: string }>>();
-  const cacheHashes = new Set((cacheRows ?? []).map((r) => r.document_hash));
+  const hashesToCheckCache = [centerRow.node_hash, ...neighborHashes];
+  const cacheHashes = await fetchFreshCacheHashes(supabase, hashesToCheckCache, nowIso);
 
   const center = await rowToDto(admin, centerRow, cacheHashes);
-  const neighbors = await Promise.all(
-    (neighborRows ?? []).map((r) => rowToDto(admin, r, cacheHashes)),
-  );
+  const neighbors = await rowsToDtosBatched(admin, neighborRows, cacheHashes);
 
   await writeAuditLog(
     {
