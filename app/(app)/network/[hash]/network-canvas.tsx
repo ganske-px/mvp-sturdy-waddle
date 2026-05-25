@@ -4,7 +4,7 @@ import Graph from 'graphology';
 import louvain from 'graphology-communities-louvain';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import { Building2, Filter, Scale, User } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -141,32 +141,34 @@ function classifyEdge(edge: GraphEdgeDto): EdgeStyleKind {
 
 const TOP_HUBS = 5;
 
-// Builds a graphology graph, runs Louvain for community assignment, then
-// ForceAtlas2 for positions. Computed once per subgraph; filters never
-// re-run this so positions stay stable as the operator toggles chips.
-function computeLayout(subgraph: SubgraphDto): {
+// Builds a graphology graph for the *visible* subset, runs Louvain for
+// community assignment, then ForceAtlas2 for positions. Recomputed every
+// time the visible set changes (type filter, occurrences slider) so the
+// remaining nodes spread into the freed space instead of staying clustered
+// where the old layout put them.
+function computeLayout(
+  center: GraphNodeDto,
+  visibleNeighbors: GraphNodeDto[],
+  visibleEdges: GraphEdgeDto[],
+): {
   positions: Map<string, { x: number; y: number }>;
   communityById: Map<string, number>;
   hubSet: Set<string>;
-  maxOccurrences: number;
 } {
   const positions = new Map<string, { x: number; y: number }>();
   const communityById = new Map<string, number>();
   const hubSet = new Set<string>();
-  if (!subgraph.center) return { positions, communityById, hubSet, maxOccurrences: 1 };
 
   const g = new Graph({ multi: false, type: 'undirected' });
-  g.addNode(subgraph.center.hash);
-  for (const n of subgraph.neighbors) {
+  g.addNode(center.hash);
+  for (const n of visibleNeighbors) {
     if (!g.hasNode(n.hash)) g.addNode(n.hash);
   }
 
-  let maxOccurrences = 1;
-  for (const e of subgraph.edges) {
+  for (const e of visibleEdges) {
     if (!g.hasNode(e.source) || !g.hasNode(e.target)) continue;
     if (e.source === e.target) continue;
     const weight = Math.max(1, e.evidence.occurrences ?? 1);
-    if (weight > maxOccurrences) maxOccurrences = weight;
     if (g.hasEdge(e.source, e.target)) {
       const cur = g.getEdgeAttribute(e.source, e.target, 'weight') ?? 1;
       g.setEdgeAttribute(e.source, e.target, 'weight', Math.max(cur, weight));
@@ -175,10 +177,10 @@ function computeLayout(subgraph: SubgraphDto): {
     }
   }
 
-  // Initial layout — small random scatter to seed FA2. Keeps the center near
-  // the origin so the eventual fitView lands roughly centered.
+  // Seed with a small scatter so FA2 has gradient to work with. Centre stays
+  // pinned at origin via the post-layout translate below.
   for (const node of g.nodes()) {
-    if (node === subgraph.center.hash) {
+    if (node === center.hash) {
       g.setNodeAttribute(node, 'x', 0);
       g.setNodeAttribute(node, 'y', 0);
     } else {
@@ -197,9 +199,12 @@ function computeLayout(subgraph: SubgraphDto): {
     // Louvain can throw on degenerate graphs; carry on without communities.
   }
 
+  // Iteration count scales gently with graph size so dense subgraphs still
+  // converge while small filtered views stay snappy.
+  const iterations = Math.min(220, Math.max(60, g.order * 2));
   try {
     forceAtlas2.assign(g, {
-      iterations: 200,
+      iterations,
       settings: {
         gravity: 1,
         scalingRatio: 10,
@@ -219,8 +224,8 @@ function computeLayout(subgraph: SubgraphDto): {
 
   // Translate so the centre node sits at (0, 0) — keeps the visual focus on
   // the searched entity, matters when the user pans/zooms.
-  const cx = (g.getNodeAttribute(subgraph.center.hash, 'x') as number) ?? 0;
-  const cy = (g.getNodeAttribute(subgraph.center.hash, 'y') as number) ?? 0;
+  const cx = (g.getNodeAttribute(center.hash, 'x') as number) ?? 0;
+  const cy = (g.getNodeAttribute(center.hash, 'y') as number) ?? 0;
   for (const node of g.nodes()) {
     positions.set(node, {
       x: ((g.getNodeAttribute(node, 'x') as number) ?? 0) - cx,
@@ -237,12 +242,12 @@ function computeLayout(subgraph: SubgraphDto): {
     weightedDegree.set(node, total);
   }
   const ranked = [...weightedDegree.entries()]
-    .filter(([h]) => h !== subgraph.center?.hash)
+    .filter(([h]) => h !== center.hash)
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_HUBS);
   for (const [h] of ranked) hubSet.add(h);
 
-  return { positions, communityById, hubSet, maxOccurrences };
+  return { positions, communityById, hubSet };
 }
 
 export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
@@ -256,10 +261,20 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const nodeTypes = useMemo(() => ({ cpf: CpfNode, cnpj: CnpjNode, lawyer: LawyerNode }), []);
   const fitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
 
-  const { positions, communityById, hubSet, maxOccurrences } = useMemo(
-    () => computeLayout(subgraph),
-    [subgraph],
-  );
+  // Defer the slider value so dragging through 100 stops doesn't kick off
+  // 100 force-layout runs; React will skip stale updates and only land on
+  // the value the user settles on (or an intermediate one as CPU frees up).
+  const deferredMinOccurrences = useDeferredValue(minOccurrences);
+  const deferredHiddenTypes = useDeferredValue(hiddenTypes);
+
+  const maxOccurrences = useMemo(() => {
+    let max = 1;
+    for (const e of subgraph.edges) {
+      const w = e.evidence.occurrences ?? 1;
+      if (w > max) max = w;
+    }
+    return max;
+  }, [subgraph.edges]);
 
   const counts = useMemo(() => {
     const result: Record<NodeType, number> = { cpf: 0, cnpj: 0, lawyer: 0 };
@@ -275,10 +290,10 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     const s = new Set<string>();
     if (subgraph.center) s.add(subgraph.center.hash);
     for (const n of subgraph.neighbors) {
-      if (!hiddenTypes.has(n.type)) s.add(n.hash);
+      if (!deferredHiddenTypes.has(n.type)) s.add(n.hash);
     }
     return s;
-  }, [subgraph.center, subgraph.neighbors, hiddenTypes]);
+  }, [subgraph.center, subgraph.neighbors, deferredHiddenTypes]);
 
   const keptEdgeDtos = useMemo(
     () =>
@@ -286,9 +301,9 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         (e) =>
           candidateHashes.has(e.source) &&
           candidateHashes.has(e.target) &&
-          (e.evidence.occurrences ?? 1) >= minOccurrences,
+          (e.evidence.occurrences ?? 1) >= deferredMinOccurrences,
       ),
-    [subgraph.edges, candidateHashes, minOccurrences],
+    [subgraph.edges, candidateHashes, deferredMinOccurrences],
   );
 
   const connectedHashes = useMemo(() => {
@@ -305,6 +320,19 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     () => subgraph.neighbors.filter((n) => connectedHashes.has(n.hash)),
     [subgraph.neighbors, connectedHashes],
   );
+
+  // Recompute layout + communities + hubs on every change to the visible
+  // subset, so the remaining nodes spread into the freed space.
+  const { positions, communityById, hubSet } = useMemo(() => {
+    if (!subgraph.center) {
+      return {
+        positions: new Map<string, { x: number; y: number }>(),
+        communityById: new Map<string, number>(),
+        hubSet: new Set<string>(),
+      };
+    }
+    return computeLayout(subgraph.center, visibleNeighbors, keptEdgeDtos);
+  }, [subgraph.center, visibleNeighbors, keptEdgeDtos]);
 
   const finalEdges = useMemo<Edge[]>(
     () =>
