@@ -4,7 +4,7 @@ export type PredictusSearchType = 'cpf' | 'cnpj' | 'name';
 // optional fields; consumers should treat unknown keys as unknown.
 export type PredictusProcess = {
   numeroProcessoUnico?: string;
-  tribunal?: string;
+  tribunal?: string | { nome?: string; sigla?: string; codigo?: string };
   classeProcessual?: string | { nome?: string; codigoCNJ?: string };
   valorCausa?: { valor?: number | string };
   partes?: unknown[];

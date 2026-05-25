@@ -1,19 +1,12 @@
 'use client';
 
 import { NetworkCta } from '@/components/network-cta';
+import { ProcessResultsTable } from '@/components/process-results-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
@@ -39,13 +32,6 @@ const PLACEHOLDERS: Record<PersonSearchType, string> = {
   cpf: '123.456.789-10',
   name: 'João Silva',
 };
-
-function formatBRL(value: number | string | undefined): string {
-  if (value === undefined || value === null || value === '') return '—';
-  const num = typeof value === 'string' ? Number(value) : value;
-  if (Number.isNaN(num)) return String(value);
-  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -210,34 +196,7 @@ export function PersonSearchClient({
                   </p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Processo</TableHead>
-                      <TableHead>Tribunal</TableHead>
-                      <TableHead>Classe</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {state.results.map((p, i) => (
-                      <TableRow key={`${p.numeroProcessoUnico ?? 'no-num'}-${i}`}>
-                        <TableCell className="font-mono text-xs">
-                          {p.numeroProcessoUnico ?? '—'}
-                        </TableCell>
-                        <TableCell className="text-sm">{p.tribunal ?? '—'}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {typeof p.classeProcessual === 'object'
-                            ? (p.classeProcessual.nome ?? '—')
-                            : (p.classeProcessual ?? '—')}
-                        </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {formatBRL(p.valorCausa?.valor)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <ProcessResultsTable results={state.results} />
               )
             ) : (
               <div
