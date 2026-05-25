@@ -32,11 +32,12 @@ app/                Next.js routes — UI + Server Actions (thin wiring)
 
 components/
   ├── ui/            shadcn primitives (button, card, input, etc.)
+  ├── network-cta.tsx "Ver rede" link, hidden by canSeeNetwork gate
   └── sign-out-button.tsx
 
 lib/                Pure-ish modules with Vitest coverage
   ├── validators/    cpf, cnpj (check digits), name (masking)
-  ├── hash.ts        SHA-256 document hashing with type prefix
+  ├── hash.ts        SHA-256 document hashing with type prefix (cpf, cnpj, name, lawyer)
   ├── audit.ts       audit_log writer + request context extractor
   ├── csv/parser.ts  CSV → de-duped CPF/CNPJ lists with 250-doc cap
   ├── crypto/vault.ts encryptText / decryptText via Vault RPC
@@ -44,8 +45,13 @@ lib/                Pure-ish modules with Vitest coverage
   │   ├── client.ts        HTTP client w/ token refresh + 3 retries
   │   ├── token-store.ts   Persistence in public.predictus_token
   │   ├── server-client.ts Factory that wires token-store into client
-  │   ├── cache.ts         get/set predictus_cache (encrypted, 30d TTL)
+  │   ├── cache.ts         get/set predictus_cache (encrypted, 30d TTL) — also feeds the graph
   │   └── item-processor.ts Per-item cache+Predictus+audit orchestration
+  ├── graph/
+  │   ├── types.ts          Shared types (NodeType, EdgeKind, ExtractedGraph, ...)
+  │   ├── label-crypto.ts   encrypt/decryptLabel via graph_label_key Vault RPCs
+  │   ├── extractor.ts      Pure: Predictus payload → nodes + edges (co_party, client_lawyer, lawyer_lawyer)
+  │   └── writer.ts         Encrypts labels and calls upsert_graph RPC atomically
   ├── bulk/
   │   ├── job-store.ts      CRUD over bulk_jobs/bulk_job_items
   │   ├── processor.ts      Loop with rate-limited sleep + per-item error isolation
@@ -85,8 +91,9 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - `document_hash` is always SHA-256 with a type prefix (`cpf:`, `cnpj:`, `name:`) via `hashDocument` in `lib/hash.ts`. The prefix prevents cross-type collisions.
 - `term_preview` (UI-safe mask, e.g. `123.***.***-10`) comes from `lib/validators/{cpf,cnpj,name}.ts:mask`. Use it instead of formatting the raw document in UI strings.
 - `predictus_cache.encrypted_payload` and `bulk_job_items.document_encrypted` are `bytea` columns encrypted via `lib/crypto/vault.ts`. They use the same Vault key, `predictus_cache_key`.
+- `graph_nodes.encrypted_label` is `bytea` encrypted via a **separate** Vault key, `graph_label_key`, through `encrypt_graph_label`/`decrypt_graph_label` RPCs in `lib/graph/label-crypto.ts`. The label JSON (`{name?, document?, oab?}`) is plaintext only on the server inside Server Actions — never in `audit_log` or returned to the client. `graph_nodes.masked_preview` is the LGPD-safe rendering for any client-side fallback.
 - Plaintext CPF/CNPJ may live in **one place**: the stack frame of `processBulkItem` during the Predictus call. It must not be persisted, logged or returned.
-- Retention: 30 days for `searches`, `audit_log`, `predictus_cache`; 7 days for completed/failed `bulk_jobs` (because they hold encrypted documents). All purged daily by pg_cron jobs scheduled in `migrations/0004` and `0005`.
+- Retention: 30 days for `searches`, `audit_log`, `predictus_cache`; 7 days for completed/failed `bulk_jobs` (because they hold encrypted documents). All purged daily by pg_cron jobs scheduled in `migrations/0004` and `0005`. **`graph_nodes`/`graph_edges` are not purged** — the graph is intentionally append-only and shared across operators.
 
 ### Auth + RLS
 
@@ -96,6 +103,7 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
   - `searches`, `bulk_jobs`, `audit_log` — operator reads/writes own rows.
   - `bulk_job_items` — visible only when the parent job belongs to the operator.
   - `predictus_cache` — any authenticated operator can read; **writes via service-role only**.
+  - `graph_nodes`, `graph_edges` — any authenticated operator can read; **writes via service-role only** (via `upsert_graph` RPC).
   - `predictus_token`, `crypto` helpers — **service-role only** (no policies → RLS denies everyone else).
 - Anything that writes `audit_log` or `predictus_cache` must use `createAdminClient()` (service role). Anything that reads operator-private data uses `createClient()` (server, cookie-aware).
 
