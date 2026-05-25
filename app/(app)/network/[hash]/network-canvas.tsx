@@ -263,44 +263,64 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     return result;
   }, [subgraph.neighbors]);
 
-  const filteredEdges = useMemo(
-    () => subgraph.edges.filter((e) => (e.evidence.occurrences ?? 1) >= minOccurrences),
-    [subgraph.edges, minOccurrences],
-  );
-
-  const visibleNeighbors = useMemo(
-    () => subgraph.neighbors.filter((n) => !hiddenTypes.has(n.type)),
-    [subgraph.neighbors, hiddenTypes],
-  );
-
-  const visibleHashSet = useMemo(() => {
+  // Visibility composes left-to-right: type filter narrows candidates, the
+  // occurrences slider keeps only strong edges, then any candidate left with
+  // no surviving edge to the rest of the visible graph is dropped — otherwise
+  // raising the slider would leave orphan nodes floating around.
+  const candidateHashes = useMemo(() => {
     const s = new Set<string>();
     if (subgraph.center) s.add(subgraph.center.hash);
-    for (const n of visibleNeighbors) s.add(n.hash);
+    for (const n of subgraph.neighbors) {
+      if (!hiddenTypes.has(n.type)) s.add(n.hash);
+    }
     return s;
-  }, [subgraph.center, visibleNeighbors]);
+  }, [subgraph.center, subgraph.neighbors, hiddenTypes]);
+
+  const keptEdgeDtos = useMemo(
+    () =>
+      subgraph.edges.filter(
+        (e) =>
+          candidateHashes.has(e.source) &&
+          candidateHashes.has(e.target) &&
+          (e.evidence.occurrences ?? 1) >= minOccurrences,
+      ),
+    [subgraph.edges, candidateHashes, minOccurrences],
+  );
+
+  const connectedHashes = useMemo(() => {
+    const s = new Set<string>();
+    if (subgraph.center) s.add(subgraph.center.hash);
+    for (const e of keptEdgeDtos) {
+      s.add(e.source);
+      s.add(e.target);
+    }
+    return s;
+  }, [keptEdgeDtos, subgraph.center]);
+
+  const visibleNeighbors = useMemo(
+    () => subgraph.neighbors.filter((n) => connectedHashes.has(n.hash)),
+    [subgraph.neighbors, connectedHashes],
+  );
 
   const finalEdges = useMemo<Edge[]>(
     () =>
-      filteredEdges
-        .filter((e) => visibleHashSet.has(e.source) && visibleHashSet.has(e.target))
-        .map((e, i) => {
-          const kind = classifyEdge(e);
-          const style = EDGE_STYLES[kind];
-          const widthBase = Math.min(5, 1 + (e.evidence.occurrences ?? 1) * 0.4);
-          return {
-            id: `e-${i}`,
-            source: e.source,
-            target: e.target,
-            style: {
-              stroke: style.stroke,
-              strokeDasharray: style.strokeDasharray,
-              strokeWidth: widthBase,
-              opacity: 0.85,
-            },
-          };
-        }),
-    [filteredEdges, visibleHashSet],
+      keptEdgeDtos.map((e, i) => {
+        const kind = classifyEdge(e);
+        const style = EDGE_STYLES[kind];
+        const widthBase = Math.min(5, 1 + (e.evidence.occurrences ?? 1) * 0.4);
+        return {
+          id: `e-${i}`,
+          source: e.source,
+          target: e.target,
+          style: {
+            stroke: style.stroke,
+            strokeDasharray: style.strokeDasharray,
+            strokeWidth: widthBase,
+            opacity: 0.85,
+          },
+        };
+      }),
+    [keptEdgeDtos],
   );
 
   const finalNodes = useMemo<Node<NodeData>[]>(() => {
@@ -402,7 +422,8 @@ export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
             </span>
           </label>
           <span className="text-muted-foreground">
-            mostrando {finalEdges.length} de {subgraph.edges.length} conexões
+            mostrando {visibleNeighbors.length} de {subgraph.neighbors.length} vizinhos ·{' '}
+            {finalEdges.length} de {subgraph.edges.length} conexões
           </span>
         </div>
 
