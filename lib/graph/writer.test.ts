@@ -88,6 +88,25 @@ describe('upsertGraph', () => {
     await expect(upsertGraph(client as never, [NODE_A], [])).rejects.toThrow(/rls denied/);
   });
 
+  it('forwards is_pep and has_sanction when node.risk is set', async () => {
+    const { client, calls } = buildFakeClient();
+    const riskNode: ExtractedNode = {
+      nodeHash: 'h1',
+      nodeType: 'cpf',
+      label: { document: '123' },
+      maskedPreview: 'm',
+      risk: { isPep: true, hasSanction: false },
+    };
+    await upsertGraph(client as never, [riskNode], []);
+    const rpc = {
+      mock: {
+        calls: calls.filter((c) => c.name === 'upsert_graph').map((c) => [c.name, c.params]),
+      },
+    };
+    const arg = rpc.mock.calls[0]?.[1] as { nodes_in: Array<Record<string, unknown>> };
+    expect(arg.nodes_in[0]).toMatchObject({ is_pep: true, has_sanction: false });
+  });
+
   it('forwards same_polo and process_number on each edge', async () => {
     const { client, calls } = buildFakeClient();
     await upsertGraph(

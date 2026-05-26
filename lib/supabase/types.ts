@@ -292,6 +292,9 @@ export type Database = {
           masked_preview: string;
           first_seen_at: string;
           last_seen_at: string;
+          is_pep: boolean;
+          has_sanction: boolean;
+          risk_updated_at: string | null;
         };
         Insert: {
           node_hash: string;
@@ -300,6 +303,9 @@ export type Database = {
           masked_preview: string;
           first_seen_at?: string;
           last_seen_at?: string;
+          is_pep?: boolean;
+          has_sanction?: boolean;
+          risk_updated_at?: string | null;
         };
         Update: {
           node_hash?: string;
@@ -308,6 +314,9 @@ export type Database = {
           masked_preview?: string;
           first_seen_at?: string;
           last_seen_at?: string;
+          is_pep?: boolean;
+          has_sanction?: boolean;
+          risk_updated_at?: string | null;
         };
       };
       graph_edges: {

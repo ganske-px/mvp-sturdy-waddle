@@ -20,6 +20,7 @@ export type ExtractedNode = {
   nodeType: NodeType;
   label: GraphNodeLabel;
   maskedPreview: string;
+  risk?: { isPep: boolean; hasSanction: boolean };
 };
 
 export type ProcessEdgeEvidence = {

@@ -8,6 +8,7 @@ import { hashDocument } from '@/lib/hash.ts';
 import { mask as maskCnpj } from '@/lib/validators/cnpj.ts';
 import { mask as maskCpf } from '@/lib/validators/cpf.ts';
 import { extractRelatedCompanies } from './parsers/related-companies.ts';
+import { extractCnpjRisk, extractCpfRisk } from './parsers/risk-flags.ts';
 import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 export type GraphBridgeInput = {
@@ -76,9 +77,12 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
   // Root node
   if (input.rootDocument.type === 'cpf' && input.rootDocument.raw.length === 11) {
     const node = makeCpfNode(input.rootDocument.raw, input.rootDocument.name);
+    if (input.cpfPayload) node.risk = extractCpfRisk(input.cpfPayload);
     nodeMap.set(node.nodeHash, node);
   } else if (input.rootDocument.type === 'cnpj' && input.rootDocument.raw.length === 14) {
     const node = makeCnpjNode(input.rootDocument.raw, input.rootDocument.name);
+    const rootPayload = input.cnpjPayloads?.[input.rootDocument.raw];
+    if (rootPayload) node.risk = extractCnpjRisk(rootPayload);
     nodeMap.set(node.nodeHash, node);
   }
 

@@ -152,6 +152,16 @@ describe('buildNetrinGraph', () => {
     expect(cpfRootCnpjEntity.edges.filter((e) => e.kind === 'family_relation')).toHaveLength(0);
   });
 
+  it('marca risco no nó raiz CPF a partir de pepKyc', () => {
+    const result = buildNetrinGraph({
+      rootDocument: { type: 'cpf', raw: '12345678909', name: 'JOAO' },
+      cpfPayload: { pepKyc: { currentlyPEP: 'Sim' } } as never,
+      cnpjPayloads: {},
+    });
+    const root = result.nodes.find((n) => n.label.document === '12345678909');
+    expect(root?.risk).toEqual({ isPep: true, hasSanction: false });
+  });
+
   it('CNPJ root: emits sócios from cnpjPayloads even without cpfPayload', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cnpj', raw: '12345678000190', name: 'ACME' },

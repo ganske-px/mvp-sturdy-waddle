@@ -22,6 +22,8 @@ type NodeIn = {
   node_type: string;
   encrypted_label_b64: string;
   masked_preview: string;
+  is_pep?: boolean;
+  has_sanction?: boolean;
 };
 
 async function encryptNodesBatched(
@@ -39,6 +41,7 @@ async function encryptNodesBatched(
           node_type: node.nodeType,
           encrypted_label_b64: hexCiphertextToBase64(hexCipher),
           masked_preview: node.maskedPreview,
+          ...(node.risk ? { is_pep: node.risk.isPep, has_sanction: node.risk.hasSanction } : {}),
         };
       }),
     );

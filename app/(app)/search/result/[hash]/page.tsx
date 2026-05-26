@@ -16,6 +16,7 @@ import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 import { getSubgraphStats } from '@/lib/graph/subgraph-stats';
 import { hashDocument } from '@/lib/hash';
 import { extractRelatedCpfs } from '@/lib/netrin/parsers/related-cpfs';
+import { extractCnpjRisk, extractCpfRisk } from '@/lib/netrin/parsers/risk-flags';
 import { isFirstDegree } from '@/lib/netrin/relationship-labels';
 import { loadEnrichmentForRoot } from '@/lib/netrin/result-loader';
 import type { NetrinCompositePayload } from '@/lib/netrin/types';
@@ -478,14 +479,15 @@ export default async function ResultPage({
 
   const nucleoFamiliar = relatedPeople.filter((p) => isFirstDegree(p.tipoRelacionamento));
 
+  const cpfRiskFlags = hop1 ? extractCpfRisk(hop1) : { isPep: false, hasSanction: false };
   const cpfRisk = [
-    { label: 'PEP', active: !!pepProps?.currentlyPEP },
-    {
-      label: 'Sanções',
-      active: !!pepProps?.currentlySanctioned || !!pepProps?.previouslySanctioned,
-    },
+    { label: 'PEP', active: cpfRiskFlags.isPep },
+    { label: 'Sanções', active: cpfRiskFlags.hasSanction },
   ];
-  const cnpjRisk = [{ label: 'Sanções', active: !!cnpjSancoesProps?.sancionado }];
+  const cnpjRiskFlags = cnpjRootPayload
+    ? extractCnpjRisk(cnpjRootPayload)
+    : { isPep: false, hasSanction: false };
+  const cnpjRisk = [{ label: 'Sanções', active: cnpjRiskFlags.hasSanction }];
 
   return (
     <main className="mx-auto w-full max-w-7xl px-6 py-12">
