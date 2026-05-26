@@ -2,11 +2,7 @@ import { hashDocument } from '@/lib/hash';
 import type { RunHop1Result } from './hops/hop1';
 import type { RunHop2Result } from './hops/hop2';
 import type { RunHop3Result } from './hops/hop3';
-import type {
-  EnrichmentCallStatus,
-  EnrichmentJobStatus,
-  RecordCallInput,
-} from './job-store';
+import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store';
 import type { NetrinCompositePayload } from './types';
 
 export type ProcessorJob = {
@@ -18,9 +14,19 @@ export type ProcessorJob = {
 
 export type ProcessorDeps = {
   job: ProcessorJob;
-  setJobStatus: (jobId: string, status: EnrichmentJobStatus, opts?: { error?: string; finished?: boolean }) => Promise<void>;
-  setHop1Status: (jobId: string, status: 'success' | 'error' | 'cache_hit' | 'skipped') => Promise<void>;
-  setHopTotals: (jobId: string, totals: { hop2_total?: number; hop3_total?: number }) => Promise<void>;
+  setJobStatus: (
+    jobId: string,
+    status: EnrichmentJobStatus,
+    opts?: { error?: string; finished?: boolean },
+  ) => Promise<void>;
+  setHop1Status: (
+    jobId: string,
+    status: 'success' | 'error' | 'cache_hit' | 'skipped',
+  ) => Promise<void>;
+  setHopTotals: (
+    jobId: string,
+    totals: { hop2_total?: number; hop3_total?: number },
+  ) => Promise<void>;
   bumpHopDone: (jobId: string, hop: 2 | 3) => Promise<void>;
   recordCall: (input: RecordCallInput) => Promise<void>;
   runHop1: () => Promise<RunHop1Result>;
@@ -57,15 +63,26 @@ export async function processEnrichmentJob(
       hop1Payload = hop1.payload;
       pivotCnpjs = hop1.pivotCnpjs;
       await deps.recordCall({
-        jobId, hop: 1, documentHash: deps.job.rootHash, documentType: 'cpf',
-        slugs: [], status: statusFromCache(hop1.cached), cached: hop1.cached,
+        jobId,
+        hop: 1,
+        documentHash: deps.job.rootHash,
+        documentType: 'cpf',
+        slugs: [],
+        status: statusFromCache(hop1.cached),
+        cached: hop1.cached,
       });
       await deps.setHop1Status(jobId, hop1.cached ? 'cache_hit' : 'success');
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await deps.recordCall({
-        jobId, hop: 1, documentHash: deps.job.rootHash, documentType: 'cpf',
-        slugs: [], status: 'error', cached: false, error: message,
+        jobId,
+        hop: 1,
+        documentHash: deps.job.rootHash,
+        documentType: 'cpf',
+        slugs: [],
+        status: 'error',
+        cached: false,
+        error: message,
       });
       await deps.setHop1Status(jobId, 'error');
       await deps.setJobStatus(jobId, 'failed', { error: message, finished: true });
@@ -86,8 +103,13 @@ export async function processEnrichmentJob(
       const hop2 = await deps.runHop2(cnpjRaw);
       hop2Payloads[cnpjRaw] = hop2.payload;
       await deps.recordCall({
-        jobId, hop: 2, documentHash: cnpjHash, documentType: 'cnpj',
-        slugs: [], status: statusFromCache(hop2.cached), cached: hop2.cached,
+        jobId,
+        hop: 2,
+        documentHash: cnpjHash,
+        documentType: 'cnpj',
+        slugs: [],
+        status: statusFromCache(hop2.cached),
+        cached: hop2.cached,
       });
       await deps.bumpHopDone(jobId, 2);
       for (const p of hop2.pivotCpfs) pivotCpfs.push({ cpf: p.cpf });
@@ -95,8 +117,14 @@ export async function processEnrichmentJob(
       anyError = true;
       const message = e instanceof Error ? e.message : String(e);
       await deps.recordCall({
-        jobId, hop: 2, documentHash: cnpjHash, documentType: 'cnpj',
-        slugs: [], status: 'error', cached: false, error: message,
+        jobId,
+        hop: 2,
+        documentHash: cnpjHash,
+        documentType: 'cnpj',
+        slugs: [],
+        status: 'error',
+        cached: false,
+        error: message,
       });
       await deps.bumpHopDone(jobId, 2);
     }
@@ -113,16 +141,27 @@ export async function processEnrichmentJob(
       const hop3 = await deps.runHop3(cpfRaw);
       hop3Payloads[cpfRaw] = hop3.payload;
       await deps.recordCall({
-        jobId, hop: 3, documentHash: cpfHash, documentType: 'cpf',
-        slugs: [], status: statusFromCache(hop3.cached), cached: hop3.cached,
+        jobId,
+        hop: 3,
+        documentHash: cpfHash,
+        documentType: 'cpf',
+        slugs: [],
+        status: statusFromCache(hop3.cached),
+        cached: hop3.cached,
       });
       await deps.bumpHopDone(jobId, 3);
     } catch (e) {
       anyError = true;
       const message = e instanceof Error ? e.message : String(e);
       await deps.recordCall({
-        jobId, hop: 3, documentHash: cpfHash, documentType: 'cpf',
-        slugs: [], status: 'error', cached: false, error: message,
+        jobId,
+        hop: 3,
+        documentHash: cpfHash,
+        documentType: 'cpf',
+        slugs: [],
+        status: 'error',
+        cached: false,
+        error: message,
       });
       await deps.bumpHopDone(jobId, 3);
     }

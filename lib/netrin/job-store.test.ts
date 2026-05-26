@@ -41,16 +41,21 @@ describe('findOrCreateJob', () => {
       { data: { id: 'j-existing', status: 'running' }, error: null },
       { data: null, error: null },
     );
-    const result = await findOrCreateJob(client, { userId: 'u1', rootHash: 'cpf:abc', rootType: 'cpf' });
+    const result = await findOrCreateJob(client, {
+      userId: 'u1',
+      rootHash: 'cpf:abc',
+      rootType: 'cpf',
+    });
     expect(result).toEqual({ jobId: 'j-existing', created: false });
   });
 
   it('inserts a new pending job when none active', async () => {
-    const client = clientWith(
-      { data: null, error: null },
-      { data: { id: 'j-new' }, error: null },
-    );
-    const result = await findOrCreateJob(client, { userId: 'u1', rootHash: 'cpf:abc', rootType: 'cpf' });
+    const client = clientWith({ data: null, error: null }, { data: { id: 'j-new' }, error: null });
+    const result = await findOrCreateJob(client, {
+      userId: 'u1',
+      rootHash: 'cpf:abc',
+      rootType: 'cpf',
+    });
     expect(result).toEqual({ jobId: 'j-new', created: true });
   });
 
@@ -82,7 +87,10 @@ describe('findOrCreateJob', () => {
           insert() {
             return {
               select() {
-                return { single: () => Promise.resolve({ data: null, error: { message: 'duplicate', code: '23505' } }) };
+                return {
+                  single: () =>
+                    Promise.resolve({ data: null, error: { message: 'duplicate', code: '23505' } }),
+                };
               },
             };
           },
@@ -90,7 +98,11 @@ describe('findOrCreateJob', () => {
       },
     } as never;
 
-    const result = await findOrCreateJob(client, { userId: 'u1', rootHash: 'cpf:abc', rootType: 'cpf' });
+    const result = await findOrCreateJob(client, {
+      userId: 'u1',
+      rootHash: 'cpf:abc',
+      rootType: 'cpf',
+    });
     expect(result).toEqual({ jobId: 'j-winner', created: false });
   });
 });

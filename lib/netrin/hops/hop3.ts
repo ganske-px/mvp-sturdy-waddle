@@ -12,9 +12,7 @@ export type RunHop3Deps = {
   userId: string;
   jobId: string;
   audit: (event: AuditEvent) => Promise<void>;
-  getCache: (
-    hash: string,
-  ) => Promise<{
+  getCache: (hash: string) => Promise<{
     payload: NetrinCompositePayload;
     slugsFetched: string[];
     fetchedAt: string;

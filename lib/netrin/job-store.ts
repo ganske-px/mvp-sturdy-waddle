@@ -61,7 +61,10 @@ export async function setJobStatus(
   const update: Record<string, unknown> = { status };
   if (opts.error !== undefined) update.error = opts.error;
   if (opts.finished) update.finished_at = new Date().toISOString();
-  const { error } = await client.from('enrichment_jobs').update(update as never).eq('id', jobId);
+  const { error } = await client
+    .from('enrichment_jobs')
+    .update(update as never)
+    .eq('id', jobId);
   if (error) throw new Error(`setJobStatus failed: ${error.message}`);
 }
 

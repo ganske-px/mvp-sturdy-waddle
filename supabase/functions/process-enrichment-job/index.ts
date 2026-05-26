@@ -58,7 +58,9 @@ Deno.serve(async (req: Request) => {
   }
   const acuraciaRaw = Deno.env.get('NETRIN_PEP_ACURACIA');
   const pepAcuraciaParsed = acuraciaRaw ? Number.parseInt(acuraciaRaw, 10) : undefined;
-  const pepAcuracia = Number.isFinite(pepAcuraciaParsed) ? (pepAcuraciaParsed as number) : undefined;
+  const pepAcuracia = Number.isFinite(pepAcuraciaParsed)
+    ? (pepAcuraciaParsed as number)
+    : undefined;
 
   const admin = createClient(env.SUPABASE_URL as string, env.SUPABASE_SECRET_KEY as string, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -91,8 +93,12 @@ Deno.serve(async (req: Request) => {
   const auditFn = (event: Parameters<typeof writeAuditLog>[0]) =>
     writeAuditLog(event, admin as never, { allowFailure: true });
   const getCacheFn = (hash: string) => getNetrinCache(admin as never, hash);
-  const setCacheFn = (hash: string, type: 'cpf' | 'cnpj', slugs: string[], payload: Record<string, unknown>) =>
-    setNetrinCache(admin as never, hash, type, slugs, payload);
+  const setCacheFn = (
+    hash: string,
+    type: 'cpf' | 'cnpj',
+    slugs: string[],
+    payload: Record<string, unknown>,
+  ) => setNetrinCache(admin as never, hash, type, slugs, payload);
 
   const task = (async () => {
     try {
@@ -104,36 +110,39 @@ Deno.serve(async (req: Request) => {
         setHopTotals: (id, t) => setHopTotals(admin as never, id, t),
         bumpHopDone: (id, hop) => bumpHopDone(admin as never, id, hop),
         recordCall: (input) => recordCall(admin as never, input),
-        runHop1: () => runHop1({
-          documentRaw: rootRaw,
-          documentHash: rootHash,
-          userId,
-          jobId: jobIdStr,
-          audit: auditFn,
-          getCache: getCacheFn,
-          setCache: setCacheFn,
-          fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
-        }),
-        runHop2: (cnpjRaw) => runHop2({
-          cnpjRaw,
-          cnpjHash: hashDocument('cnpj', cnpjRaw),
-          userId,
-          jobId: jobIdStr,
-          audit: auditFn,
-          getCache: getCacheFn,
-          setCache: setCacheFn,
-          fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
-        }),
-        runHop3: (cpfRaw) => runHop3({
-          cpfRaw,
-          cpfHash: hashDocument('cpf', cpfRaw),
-          userId,
-          jobId: jobIdStr,
-          audit: auditFn,
-          getCache: getCacheFn,
-          setCache: setCacheFn,
-          fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
-        }),
+        runHop1: () =>
+          runHop1({
+            documentRaw: rootRaw,
+            documentHash: rootHash,
+            userId,
+            jobId: jobIdStr,
+            audit: auditFn,
+            getCache: getCacheFn,
+            setCache: setCacheFn,
+            fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
+          }),
+        runHop2: (cnpjRaw) =>
+          runHop2({
+            cnpjRaw,
+            cnpjHash: hashDocument('cnpj', cnpjRaw),
+            userId,
+            jobId: jobIdStr,
+            audit: auditFn,
+            getCache: getCacheFn,
+            setCache: setCacheFn,
+            fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
+          }),
+        runHop3: (cpfRaw) =>
+          runHop3({
+            cpfRaw,
+            cpfHash: hashDocument('cpf', cpfRaw),
+            userId,
+            jobId: jobIdStr,
+            audit: auditFn,
+            getCache: getCacheFn,
+            setCache: setCacheFn,
+            fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
+          }),
         finalize: async ({ hop1Payload, hop2Payloads }) => {
           const graph = buildNetrinGraph({
             rootDocument: { type: rootType, raw: rootRaw },

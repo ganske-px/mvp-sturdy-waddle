@@ -4,7 +4,7 @@ Project context for Claude Code working on this repository. The README is for hu
 
 ## What this is
 
-Internal background check app for PX Center. Operators authenticate, then query the Predictus API by CPF, CNPJ or name — individually (single search) or via CSV upload (bulk). Results are cached, audited and rate-limited.
+Internal background check app for PX Center. Operators authenticate, then query the Predictus API by CPF, CNPJ or name — individually (single search) or via CSV upload (bulk). Every single CPF/CNPJ search also fires a fire-and-forget enrichment job to Netrin `consulta-composta` (3-hop antifraude). Results are cached, audited, and rate-limited.
 
 Originally a Streamlit + Python MVP, now a Supabase + Next.js + Vercel rewrite. Python code is preserved under `legacy-streamlit/` for reference only — **never** import from it.
 
@@ -47,6 +47,22 @@ lib/                Pure-ish modules with Vitest coverage
   │   ├── server-client.ts Factory that wires token-store into client
   │   ├── cache.ts         get/set predictus_cache (encrypted, 30d TTL) — also feeds the graph
   │   └── item-processor.ts Per-item cache+Predictus+audit orchestration
+  ├── netrin/
+  │   ├── client.ts        HTTP GET client for consulta-composta, multi-`s=`, token via query, retries 5xx
+  │   ├── server-client.ts Factory reading NETRIN_BASE_URL / NETRIN_TOKEN / NETRIN_PEP_ACURACIA
+  │   ├── cache.ts         get/set netrin_cache (encrypted via netrin_cache_key, 30d TTL, per-documento)
+  │   ├── types.ts         HOP1_SLUGS / HOP2_SLUGS / HOP3_SLUGS, NetrinError, NetrinCompositePayload
+  │   ├── parsers/
+  │   │   ├── pivot-cnpjs.ts  Extrai CNPJs de empresas-relacionadas-cpf.negociosRelacionados[]
+  │   │   └── pivot-cpfs.ts   Extrai sócios CPF de pessoas-relacionadas-cnpj.entidadesRelacionadas[]
+  │   ├── hops/
+  │   │   ├── hop1.ts      CPF root: 7 slugs + extract CNPJ pivots
+  │   │   ├── hop2.ts      Por CNPJ: 11 slugs + extract CPF sócio pivots
+  │   │   └── hop3.ts      Por CPF sócio: 5 slugs (terminal)
+  │   ├── job-store.ts     CRUD enrichment_jobs/calls + race-aware findOrCreateJob (23505 fallback)
+  │   ├── processor.ts     Loop hop1→hop2 por CNPJ→hop3 por CPF com error isolation por item
+  │   ├── graph-bridge.ts  Netrin payload → ExtractedGraph (nodes cpf/cnpj + edges corporate_relation)
+  │   └── result-loader.ts Server-only: lê job+calls+decifra netrin_cache em hop1/byCnpj/byCpf
   ├── graph/
   │   ├── types.ts          Shared types (NodeType, EdgeKind, ExtractedGraph, ...)
   │   ├── label-crypto.ts   encrypt/decryptLabel via graph_label_key Vault RPCs
@@ -68,10 +84,11 @@ proxy.ts            Next.js 16 file convention (was middleware.ts)
 supabase/
   ├── migrations/    SQL — schema, RLS, crypto helpers, pg_cron jobs
   ├── functions/
-  │   └── process-bulk-job/ Edge Function (Deno) — reuses lib/ via relative imports
+  │   ├── process-bulk-job/         Edge Function (Deno) — bulk CSV worker
+  │   └── process-enrichment-job/   Edge Function (Deno) — Netrin Hops 1+2+3 worker
   └── config.toml    Local Supabase config (signup disabled, 12-char passwords)
 scripts/
-  └── bootstrap-vault.sql Idempotent Vault key creation
+  └── bootstrap-vault.sql Idempotent Vault key creation (predictus_cache_key + netrin_cache_key + graph_label_key)
 
 legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 ```
@@ -80,20 +97,22 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 
 ### TDD is the default for `lib/**`
 
-- Write tests first. The current count is **157 passing**; growing the codebase means growing this number.
+- Write tests first. The current count is **270 passing**; growing the codebase means growing this number.
 - Run `pnpm test:watch` while editing a `lib/**` module.
 - A new public function in `lib/` without a `.test.ts` is a code smell.
 - The `app/**` and `supabase/functions/**` layers are thin wiring on top of `lib/`. They are exercised by build + manual smoke; unit tests are optional there.
 
 ### LGPD — these are non-negotiable
 
-- **No CPF, CNPJ or personal name in cleartext** in `searches`, `audit_log` or any logged output.
-- `document_hash` is always SHA-256 with a type prefix (`cpf:`, `cnpj:`, `name:`) via `hashDocument` in `lib/hash.ts`. The prefix prevents cross-type collisions.
+- **No CPF, CNPJ or personal name in cleartext** in `searches`, `audit_log`, `enrichment_jobs`, `enrichment_job_calls` or any logged output.
+- `document_hash` is always SHA-256 with a type prefix (`cpf:`, `cnpj:`, `name:`, `lawyer:`) via `hashDocument` in `lib/hash.ts`. The prefix prevents cross-type collisions.
 - `term_preview` (UI-safe mask, e.g. `123.***.***-10`) comes from `lib/validators/{cpf,cnpj,name}.ts:mask`. Use it instead of formatting the raw document in UI strings.
-- `predictus_cache.encrypted_payload` and `bulk_job_items.document_encrypted` are `bytea` columns encrypted via `lib/crypto/vault.ts`. They use the same Vault key, `predictus_cache_key`.
-- `graph_nodes.encrypted_label` is `bytea` encrypted via a **separate** Vault key, `graph_label_key`, through `encrypt_graph_label`/`decrypt_graph_label` RPCs in `lib/graph/label-crypto.ts`. The label JSON (`{name?, document?, oab?}`) is plaintext only on the server inside Server Actions — never in `audit_log` or returned to the client. `graph_nodes.masked_preview` is the LGPD-safe rendering for any client-side fallback.
-- Plaintext CPF/CNPJ may live in **one place**: the stack frame of `processBulkItem` during the Predictus call. It must not be persisted, logged or returned.
-- Retention: 30 days for `searches`, `audit_log`, `predictus_cache`; 7 days for completed/failed `bulk_jobs` (because they hold encrypted documents). All purged daily by pg_cron jobs scheduled in `migrations/0004` and `0005`. **`graph_nodes`/`graph_edges` are not purged** — the graph is intentionally append-only and shared across operators.
+- `predictus_cache.encrypted_payload` and `bulk_job_items.document_encrypted` are `bytea` columns encrypted via Vault key `predictus_cache_key` (RPCs `encrypt_payload` / `decrypt_payload`, helpers `encryptText` / `decryptText` em `lib/crypto/vault.ts`).
+- `netrin_cache.encrypted_payload` é `bytea` encriptado via uma chave **separada** `netrin_cache_key` (defesa em profundidade — vazamento de uma chave não compromete a outra). RPCs `encrypt_netrin` / `decrypt_netrin`, helpers `encryptNetrinText` / `decryptNetrinText`.
+- `graph_nodes.encrypted_label` é `bytea` encriptado via uma terceira chave `graph_label_key`, através de `encrypt_graph_label`/`decrypt_graph_label` em `lib/graph/label-crypto.ts`. O label JSON (`{name?, document?, oab?}`) só é plaintext no servidor dentro de Server Actions — nunca em `audit_log` ou retornado ao cliente. `graph_nodes.masked_preview` é a renderização LGPD-safe para fallback client-side.
+- Plaintext CPF/CNPJ pode viver em **dois lugares**: (1) stack frame de `processBulkItem` durante a chamada Predictus, (2) stack frame do Edge Function `process-enrichment-job` durante chamadas Netrin (incluindo CPFs sócios descobertos em Hop 2). Em ambos os casos: não persistir, não logar, não retornar.
+- `NETRIN_TOKEN` é secret server-only: nunca em log, audit, error message ou resposta de Server Action/cliente. Lido apenas em `lib/netrin/server-client.ts` e na Edge Function.
+- Retention: 30 days for `searches`, `audit_log`, `predictus_cache`, `netrin_cache`, `enrichment_jobs` (incluindo `enrichment_job_calls` via cascade); 7 days for completed/failed `bulk_jobs` (because they hold encrypted documents). All purged daily by pg_cron jobs em `20260520180300_retention_cron.sql` e `20260526100400_enrichment_retention.sql`. Jobs órfãos (`pending`/`running` > 15 min) são marcados como `failed` a cada 5 min. **`graph_nodes`/`graph_edges` are not purged** — o grafo é intencionalmente append-only e compartilhado entre operadores.
 
 ### Auth + RLS
 
@@ -102,8 +121,9 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - Tables are RLS-protected:
   - `searches`, `bulk_jobs`, `audit_log` — operator reads/writes own rows.
   - `bulk_job_items` — visible only when the parent job belongs to the operator.
-  - `predictus_cache` — any authenticated operator can read; **writes via service-role only**.
+  - `predictus_cache`, `netrin_cache` — any authenticated operator can read; **writes via service-role only**.
   - `graph_nodes`, `graph_edges` — any authenticated operator can read; **writes via service-role only** (via `upsert_graph` RPC).
+  - `enrichment_jobs`, `enrichment_job_calls` — operator reads próprias rows (parent gate em calls); **writes via service-role only**. Ambas tabelas estão em `supabase_realtime` publication para o canal `enrichment:<jobId>`.
   - `predictus_token`, `crypto` helpers — **service-role only** (no policies → RLS denies everyone else).
 - Anything that writes `audit_log` or `predictus_cache` must use `createAdminClient()` (service role). Anything that reads operator-private data uses `createClient()` (server, cookie-aware).
 
@@ -123,6 +143,22 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - Never `new PredictusClient(...)` directly inside `app/` or `supabase/functions/`. Use `createServerPredictusClient()` from `lib/predictus/server-client.ts`. It wires the `SupabaseTokenStore` so the access token survives cold starts.
 - The client retries 5xx and network errors with exponential backoff (1s, 2s, 4s, then throws). It refreshes on 401 exactly once.
 - Predictus credentials are shared (one upstream account for all operators). Never expose them client-side.
+
+### Netrin client
+
+- Never `new NetrinClient(...)` directly inside `app/` ou `supabase/functions/`. Use `createServerNetrinClient()` from `lib/netrin/server-client.ts`. Reads `NETRIN_BASE_URL`, `NETRIN_TOKEN`, `NETRIN_PEP_ACURACIA` (default 95).
+- Token estático em query string `?token=...`. Sem `authenticate()`, sem refresh, sem token-store — bem mais simples que Predictus.
+- O método único é `fetchComposta(docType, documentRaw, slugs)`. Slugs vêm dos arrays const exportados (`HOP1_SLUGS`, `HOP2_SLUGS`, `HOP3_SLUGS`) em `lib/netrin/types.ts` — nunca componha slugs ad-hoc na call site.
+- Retries: 5xx e network com exp backoff (1s, 2s, 4s). 401/403 → throw imediato (token estático, sem refresh).
+- O `NETRIN_TOKEN` nunca aparece em mensagem de erro (`NetrinError` carrega apenas status + slugs, não a URL).
+
+### Enrichment orchestration
+
+- Toda busca por CPF (`searchPerson`) ou CNPJ (`searchByCnpj`) chama `findOrCreateJob` e dispara fire-and-forget via `fetch` ao Edge Function `process-enrichment-job` quando `created=true`. Re-pesquisar o mesmo documento enquanto há job ativo reusa o job (índice parcial único em `enrichment_jobs.root_hash WHERE status IN ('pending','running')`).
+- A Server Action passa `{ jobId, documentRaw }` no body — `documentRaw` é necessário porque `root_hash` é one-way.
+- O Edge Function chama `processEnrichmentJob` com `runHop1` / `runHop2` / `runHop3` injetados — todos compartilhados de `lib/netrin/hops/`. Erro em Hop 1 = `failed`; erro em Hop 2/3 isolado por item = `partial`. Crash do Edge = órfão → `failed` em até 15 min via pg_cron.
+- Após todos os hops, `buildNetrinGraph(...)` produz `ExtractedGraph` (nodes cpf/cnpj, edges `corporate_relation`) e `upsertGraph` persiste no grafo compartilhado.
+- A página `/search/result/[hash]` chama `loadEnrichmentForRoot` (server-only) que decifra `netrin_cache` por hash e renderiza as cards via componentes em `components/antifraude/`. `EnrichmentRealtime` (client) assina `postgres_changes` em `enrichment_jobs` e `enrichment_job_calls` e chama `router.refresh()` em mudanças.
 
 ### Bulk processing
 
@@ -147,19 +183,31 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 auth.users  ◄── (trigger: on_auth_user_created) ──►  public.users  (allowlist)
                                                           │
                                                           ▼ (RLS by user_id)
-                                       searches  ◄── single search history
-                                       bulk_jobs  ◄── async batch metadata
+                                       searches             ◄── single search history
+                                       bulk_jobs             ◄── async batch metadata
                                             │
                                             ▼ (RLS via parent)
-                                       bulk_job_items  ◄── encrypted documents
-                                                          ◄── 7-day purge
-                                       audit_log  ◄── append-only, 30-day purge
+                                       bulk_job_items       ◄── encrypted documents
+                                                              ◄── 7-day purge
+                                       audit_log            ◄── append-only, 30-day purge
+                                       enrichment_jobs      ◄── Netrin antifraude job (unique pending|running per root_hash)
+                                            │
+                                            ▼ (RLS via parent)
+                                       enrichment_job_calls ◄── 1 row por chamada HTTP, sem payload
+                                                              ◄── 30-day purge (cascade); órfão > 15min = failed
+graph_nodes   ◄── shared, append-only (encrypted_label via graph_label_key)
+graph_edges   ◄── kinds: co_party | client_lawyer | lawyer_lawyer | corporate_relation
 
 (service-role only)
-predictus_cache   — shared encrypted cache, 30-day TTL
-predictus_token   — singleton row holding the Predictus access token
-encrypt_payload   — Vault RPC (pgp_sym_encrypt)
-decrypt_payload   — Vault RPC (pgp_sym_decrypt)
+predictus_cache    — shared encrypted cache (predictus_cache_key), 30-day TTL
+netrin_cache       — shared encrypted Netrin composta payload (netrin_cache_key), 30-day TTL
+predictus_token    — singleton row holding the Predictus access token
+encrypt_payload    — Vault RPC for predictus_cache_key (pgp_sym_encrypt)
+decrypt_payload    — Vault RPC for predictus_cache_key (pgp_sym_decrypt)
+encrypt_netrin     — Vault RPC for netrin_cache_key
+decrypt_netrin     — Vault RPC for netrin_cache_key
+encrypt_graph_label/ decrypt_graph_label — Vault RPCs for graph_label_key
+upsert_graph       — polymorphic RPC: process kinds merge processNumbers; corporate_relation overwrites evidence
 ```
 
 The full SQL lives under `supabase/migrations/`. Treat migrations as append-only — new changes go in a new file `YYYYMMDDHHMMSS_<slug>.sql`.
@@ -197,8 +245,17 @@ The full SQL lives under `supabase/migrations/`. Treat migrations as append-only
 3. `cp .env.local.example .env.local` and fill from `supabase status`
 4. `psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" -f scripts/bootstrap-vault.sql`
 5. Create an operator via Studio (Auth → Add user)
-6. Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` in `.env.local`
+6. Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` e `NETRIN_TOKEN` in `.env.local`
 7. `pnpm dev`
+
+### Adicionar um novo slug Netrin a um Hop existente
+
+1. Adicionar o nome do slug ao array const apropriado em `lib/netrin/types.ts` (`HOP1_SLUGS`, `HOP2_SLUGS` ou `HOP3_SLUGS`). O union type `NetrinSlug` é derivado, não precisa ser editado manualmente.
+2. Se o slug carrega um pivot novo (algo análogo a `negociosRelacionados[]`), crie um parser em `lib/netrin/parsers/*.ts` com `.test.ts` (TDD).
+3. Se o parser produz nós/arestas no grafo, estender `lib/netrin/graph-bridge.ts` para emitir o `ExtractedEdge` correto (provavelmente `corporate_relation` com um `source` novo).
+4. Adicionar a renderização na card relevante em `components/antifraude/` — ou criar uma card nova e plugar em `app/(app)/search/result/[hash]/page.tsx`.
+5. Re-rodar `pnpm test`. O cache em `netrin_cache.slugs_fetched` registra quais slugs foram fetchados — payloads cacheados antes do novo slug terão miss parcial; aceita-se a re-busca (a chave é o documento_hash, não o set de slugs).
+6. Cobrar separadamente é responsabilidade da Netrin — atenção ao custo se o slug for caro.
 
 ### Adicionar uma nova permissão de serviço
 
@@ -223,15 +280,18 @@ Depois, o admin cria os demais operadores via `/admin/users/new`.
 ## Things to never do
 
 - **Never** put a CPF/CNPJ in `console.log`, `console.error`, an error message, or any persisted artifact. Hash or mask first.
+- **Never** put `NETRIN_TOKEN` em log, audit, error message, ou qualquer resposta que chegue ao cliente. O token é server-only.
 - **Never** import from `legacy-streamlit/`.
-- **Never** `new PredictusClient(...)` inside `app/` or `supabase/functions/`. Use `createServerPredictusClient()`.
+- **Never** `new PredictusClient(...)` ou `new NetrinClient(...)` inside `app/` or `supabase/functions/`. Use `createServerPredictusClient()` / `createServerNetrinClient()`.
 - **Never** call `supabase.auth.signInWithPassword` outside `app/login/actions.ts`. Sign-in is centralized.
-- **Never** add a Server Action that mutates audit/cache state without going through `lib/audit.ts` and `lib/predictus/cache.ts`. Re-deriving the snake_case mapping by hand creates drift.
+- **Never** add a Server Action that mutates audit/cache state without going through `lib/audit.ts`, `lib/predictus/cache.ts` ou `lib/netrin/cache.ts`. Re-deriving the snake_case mapping by hand creates drift.
+- **Never** compor slugs Netrin ad-hoc — use sempre os arrays const `HOP1_SLUGS` / `HOP2_SLUGS` / `HOP3_SLUGS` de `lib/netrin/types.ts`.
+- **Never** chamar `fetchComposta` direto de um Server Action ou page. O ciclo audit→cache→fetch→cache.set é responsabilidade dos `runHopN` em `lib/netrin/hops/`.
 - **Never** add `as any`. If you need to escape Supabase's `never` inference, use `as never` and explain why in a one-line comment.
 - **Never** edit a migration after it has been applied to any environment. Add a new one.
 - **Never** disable a Biome rule globally to silence a warning. Add a targeted `biome-ignore` with a justification.
 - **Never** skip `pnpm typecheck` and `pnpm test` before committing.
-- **Nunca** citar nomes de fornecedores (ex.: Predictus) em copy visível ao operador. Use "consulta", "serviço de consulta" ou "fonte de dados".
+- **Nunca** citar nomes de fornecedores (ex.: Predictus, Netrin) em copy visível ao operador. Use "consulta", "serviço de consulta", "antifraude" ou "fonte de dados".
 - **Nunca** misturar copy em inglês na UI. A interface é toda pt-BR.
 - **Nunca** criar usuário no Supabase Studio para uso operacional. Use `/admin/users/new`. Studio fica reservado para bootstrap inicial e operações de emergência.
 - **Nunca** chamar `requireAdmin` / `requirePermission` apenas no proxy — sempre repetir na Server Action ou Page como defesa em profundidade.
@@ -254,6 +314,8 @@ pnpm exec supabase status    # prints publishable key, secret key, db url
 pnpm exec supabase db reset  # destroys and re-applies all migrations
 pnpm exec supabase db push   # apply pending migrations to the linked project
 pnpm exec supabase functions deploy process-bulk-job
+pnpm exec supabase functions deploy process-enrichment-job
+pnpm exec supabase secrets set NETRIN_BASE_URL=https://api.netrin.com.br NETRIN_TOKEN=<token> NETRIN_PEP_ACURACIA=95
 ```
 
 ## When unsure
