@@ -34,6 +34,18 @@ export type ItemProcessorDeps = {
    * passed to Predictus. Plaintext lives only on the stack of this function.
    */
   decryptDocument: (ciphertext: string) => Promise<string>;
+  /**
+   * Dispara o job de enrichment (Netrin) em paralelo, reusando o ciphertext já
+   * armazenado em `bulk_job_items.document_encrypted` (cifrado via
+   * predictus_cache_key — mesma chave que `findOrCreateJob` espera). Opcional:
+   * quando ausente, o bulk segue só com Predictus (comportamento legado).
+   */
+  dispatchEnrichment?: (input: {
+    userId: string;
+    rootHash: string;
+    rootType: 'cpf' | 'cnpj';
+    documentEncrypted: string;
+  }) => Promise<void>;
   userId: string;
   ip?: string;
   userAgent?: string;
@@ -43,6 +55,19 @@ export async function processBulkItem(
   item: BulkItemRow,
   deps: ItemProcessorDeps,
 ): Promise<ItemOutcome> {
+  if (deps.dispatchEnrichment) {
+    try {
+      await deps.dispatchEnrichment({
+        userId: deps.userId,
+        rootHash: item.document_hash,
+        rootType: item.document_type,
+        documentEncrypted: item.document_encrypted,
+      });
+    } catch (e) {
+      console.warn('bulk item enrichment dispatch failed:', e);
+    }
+  }
+
   // Cache lookup. Failures don't block the call — we just miss the cache.
   let cached: CachedResult | null = null;
   let cacheLookupFailed = false;

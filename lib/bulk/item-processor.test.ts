@@ -200,3 +200,63 @@ describe('processBulkItem — predictus failure', () => {
     expect(order).toEqual(['audit', 'predictus']);
   });
 });
+
+describe('processBulkItem — enrichment dispatch', () => {
+  it('dispatches enrichment with the item ciphertext on cache miss', async () => {
+    const dispatchEnrichment = vi.fn(async () => {});
+    const item = {
+      id: 'item-1',
+      job_id: 'job-1',
+      document_hash: 'h1',
+      document_type: 'cpf',
+      document_encrypted: 'CIPHER',
+    } as never;
+
+    await processBulkItem(item, {
+      admin: {} as never,
+      predictus: { searchByCpf: async () => [], searchByCnpj: async () => [] },
+      audit: async () => {},
+      getCachedResults: async () => null,
+      setCachedResults: async () => {},
+      decryptDocument: async () => '12345678909',
+      userId: 'user-1',
+      dispatchEnrichment,
+    });
+
+    expect(dispatchEnrichment).toHaveBeenCalledWith({
+      userId: 'user-1',
+      rootHash: 'h1',
+      rootType: 'cpf',
+      documentEncrypted: 'CIPHER',
+    });
+  });
+
+  it('still dispatches enrichment on cache hit', async () => {
+    const dispatchEnrichment = vi.fn(async () => {});
+    const item = {
+      id: 'item-2',
+      job_id: 'job-1',
+      document_hash: 'h2',
+      document_type: 'cnpj',
+      document_encrypted: 'CIPHER2',
+    } as never;
+
+    await processBulkItem(item, {
+      admin: {} as never,
+      predictus: { searchByCpf: async () => [], searchByCnpj: async () => [] },
+      audit: async () => {},
+      getCachedResults: async () => ({ results: [{} as never], fetchedAt: 'now' }),
+      setCachedResults: async () => {},
+      decryptDocument: async () => '12345678000190',
+      userId: 'user-1',
+      dispatchEnrichment,
+    });
+
+    expect(dispatchEnrichment).toHaveBeenCalledWith({
+      userId: 'user-1',
+      rootHash: 'h2',
+      rootType: 'cnpj',
+      documentEncrypted: 'CIPHER2',
+    });
+  });
+});
