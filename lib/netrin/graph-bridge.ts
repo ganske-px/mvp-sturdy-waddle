@@ -11,9 +11,10 @@ import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 export type GraphBridgeInput = {
   rootDocument: { type: NetrinDocumentType; raw: string; name?: string };
-  hop1Payload: NetrinCompositePayload | null;
-  hop2Payloads: Record<string, NetrinCompositePayload>; // key: cnpj raw 14 dígitos
-  hop3Payloads?: Record<string, NetrinCompositePayload>; // key: cpf raw 11 dígitos
+  /** Payload from a CPF search (Hop1 slugs). Null/undefined when this build is not driven by a CPF search. */
+  cpfPayload?: NetrinCompositePayload | null;
+  /** Payloads from CNPJ searches. Key = raw CNPJ string (14 digits). */
+  cnpjPayloads?: Record<string, NetrinCompositePayload>;
 };
 
 type Negocio = {
@@ -104,9 +105,9 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
     nodeMap.set(node.nodeHash, node);
   }
 
-  // Hop 1: CPF root → relaciona CNPJs de empresas
-  if (input.hop1Payload) {
-    const slug = input.hop1Payload['empresas-relacionadas-cpf'] as
+  // CPF root → relaciona CNPJs de empresas
+  if (input.cpfPayload) {
+    const slug = input.cpfPayload['empresas-relacionadas-cpf'] as
       | { negociosRelacionados?: unknown }
       | null
       | undefined;
@@ -132,8 +133,8 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
     }
   }
 
-  // Hop 2: CNPJ → sócios CPF
-  for (const [cnpjRaw, payload] of Object.entries(input.hop2Payloads)) {
+  // CNPJ payloads → sócios CPF
+  for (const [cnpjRaw, payload] of Object.entries(input.cnpjPayloads ?? {})) {
     if (cnpjRaw.length !== 14) continue;
     const cnpjHash = hashDocument('cnpj', cnpjRaw);
     if (!nodeMap.has(cnpjHash)) {
@@ -150,15 +151,7 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
       const cpfRaw = typeof item.cpf === 'string' ? item.cpf.replace(/\D/g, '') : '';
       if (cpfRaw.length !== 11) continue;
 
-      let partnerName = typeof item.nome === 'string' ? item.nome : undefined;
-      const hop3Payload = input.hop3Payloads?.[cpfRaw];
-      if (hop3Payload) {
-        const espCpf = hop3Payload['esp-cpf'] as { nome?: string } | null | undefined;
-        if (typeof espCpf?.nome === 'string' && espCpf.nome.trim()) {
-          partnerName = espCpf.nome;
-        }
-      }
-
+      const partnerName = typeof item.nome === 'string' ? item.nome : undefined;
       const socioNode = makeCpfNode(cpfRaw, partnerName);
       nodeMap.set(socioNode.nodeHash, socioNode);
       edges.push({

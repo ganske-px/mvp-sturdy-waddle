@@ -5,7 +5,7 @@ describe('buildNetrinGraph', () => {
   it('emits corporate edges from CPF root → CNPJs', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909', name: 'JOAO' },
-      hop1Payload: {
+      cpfPayload: {
         'esp-cpf': { nome: 'JOAO' },
         'empresas-relacionadas-cpf': {
           negociosRelacionados: [
@@ -20,7 +20,7 @@ describe('buildNetrinGraph', () => {
           ],
         },
       },
-      hop2Payloads: {},
+      cnpjPayloads: {},
     });
 
     const cnpjNode = result.nodes.find((n) => n.nodeType === 'cnpj');
@@ -36,15 +36,15 @@ describe('buildNetrinGraph', () => {
     });
   });
 
-  it('emits CNPJ → CPF socio edges from Hop 2 payloads', () => {
+  it('emits CNPJ → CPF socio edges from cnpjPayloads', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909', name: 'JOAO' },
-      hop1Payload: {
+      cpfPayload: {
         'empresas-relacionadas-cpf': {
           negociosRelacionados: [{ cnpj: '12345678000190', razaoSocial: 'ACME' }],
         },
       },
-      hop2Payloads: {
+      cnpjPayloads: {
         '12345678000190': {
           'esp-cnpj-completo': { razaoSocial: 'ACME' },
           'pessoas-relacionadas-cnpj': {
@@ -71,68 +71,36 @@ describe('buildNetrinGraph', () => {
     expect(cnpjToCpf?.evidence.vinculo).toBe('SOCIO');
   });
 
-  it('enriches socio CPF node name from hop3Payloads esp-cpf when available', () => {
-    const result = buildNetrinGraph({
-      rootDocument: { type: 'cpf', raw: '12345678909' },
-      hop1Payload: {
-        'empresas-relacionadas-cpf': {
-          negociosRelacionados: [{ cnpj: '12345678000190', razaoSocial: 'ACME' }],
-        },
-      },
-      hop2Payloads: {
-        '12345678000190': {
-          'pessoas-relacionadas-cnpj': {
-            entidadesRelacionadas: [
-              { cpf: '98765432100', nome: 'MARIA APELIDO', vinculoDoRelacionamento: 'SOCIO' },
-            ],
-          },
-        },
-      },
-      hop3Payloads: {
-        '98765432100': {
-          'esp-cpf': { nome: 'MARIA OFICIAL DA SILVA' },
-        },
-      },
-    });
-
-    const mariaNode = result.nodes.find((n) => n.label.document === '98765432100');
-    expect(mariaNode?.label.name).toBe('MARIA OFICIAL DA SILVA');
-  });
-
-  it('falls back to hop2 nome when hop3 esp-cpf is missing or empty', () => {
-    const result = buildNetrinGraph({
-      rootDocument: { type: 'cpf', raw: '12345678909' },
-      hop1Payload: {
-        'empresas-relacionadas-cpf': {
-          negociosRelacionados: [{ cnpj: '12345678000190' }],
-        },
-      },
-      hop2Payloads: {
-        '12345678000190': {
-          'pessoas-relacionadas-cnpj': {
-            entidadesRelacionadas: [{ cpf: '98765432100', nome: 'MARIA FALLBACK' }],
-          },
-        },
-      },
-      hop3Payloads: {
-        '98765432100': { 'esp-cpf': { nome: '   ' } },
-      },
-    });
-    const mariaNode = result.nodes.find((n) => n.label.document === '98765432100');
-    expect(mariaNode?.label.name).toBe('MARIA FALLBACK');
-  });
-
   it('omits malformed cnpj/cpf rows silently', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909' },
-      hop1Payload: {
+      cpfPayload: {
         'empresas-relacionadas-cpf': {
           negociosRelacionados: [{ cnpj: 'invalid' }, { cnpj: '12345678000190' }],
         },
       },
-      hop2Payloads: {},
+      cnpjPayloads: {},
     });
     const cnpjNodes = result.nodes.filter((n) => n.nodeType === 'cnpj');
     expect(cnpjNodes).toHaveLength(1);
+  });
+
+  it('CNPJ root: emits sócios from cnpjPayloads even without cpfPayload', () => {
+    const result = buildNetrinGraph({
+      rootDocument: { type: 'cnpj', raw: '12345678000190', name: 'ACME' },
+      cnpjPayloads: {
+        '12345678000190': {
+          'pessoas-relacionadas-cnpj': {
+            entidadesRelacionadas: [
+              { cpf: '98765432100', nome: 'JOAO', vinculoDoRelacionamento: 'SOCIO' },
+            ],
+          },
+        },
+      },
+    });
+    expect(result.nodes.map((n) => n.nodeType).sort()).toEqual(['cnpj', 'cpf']);
+    const corpEdges = result.edges.filter((e) => e.kind === 'corporate_relation');
+    expect(corpEdges).toHaveLength(1);
+    expect(corpEdges[0]?.evidence.vinculo).toBe('SOCIO');
   });
 });
