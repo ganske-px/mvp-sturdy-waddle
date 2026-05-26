@@ -23,20 +23,7 @@ export const CNPJ_SLUGS = [
   'trabalho-escravo',
 ] as const;
 
-// Deprecated — kept until Tasks 2 (delete hop3.ts) and 8 (drop hop3 from graph-bridge) land.
-// At that point this const and its contribution to NetrinSlug can be removed.
-export const HOP3_SLUGS = [
-  'esp-cpf',
-  'pep-kyc-cpf',
-  'midias-consolidado',
-  'processos-cpf',
-  'empresas-relacionadas-cpf',
-] as const;
-
-export type NetrinSlug =
-  | (typeof CPF_SLUGS)[number]
-  | (typeof CNPJ_SLUGS)[number]
-  | (typeof HOP3_SLUGS)[number];
+export type NetrinSlug = (typeof CPF_SLUGS)[number] | (typeof CNPJ_SLUGS)[number];
 
 export type NetrinCompositePayload = Partial<Record<NetrinSlug, unknown>>;
 

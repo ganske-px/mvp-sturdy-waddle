@@ -60,18 +60,18 @@ describe('netrin cache', () => {
   });
 
   it('decrypts payload on hit', async () => {
-    const payload: NetrinCompositePayload = { 'esp-cpf': { ok: true } };
+    const payload: NetrinCompositePayload = { 'pep-kyc-cpf': { ok: true } };
     const client = fakeClient({
       selectRow: {
         encrypted_payload: `enc(${JSON.stringify(payload)})`,
-        slugs_fetched: ['esp-cpf'],
+        slugs_fetched: ['pep-kyc-cpf'],
         fetched_at: '2026-05-26T00:00:00Z',
       },
     });
     const result = await getNetrinCache(client, 'cpf:abc');
     expect(result).not.toBeNull();
     expect(result?.payload).toEqual(payload);
-    expect(result?.slugsFetched).toEqual(['esp-cpf']);
+    expect(result?.slugsFetched).toEqual(['pep-kyc-cpf']);
     expect(result?.fetchedAt).toBe('2026-05-26T00:00:00Z');
   });
 
@@ -87,13 +87,13 @@ describe('netrin cache', () => {
         captured = row as typeof captured;
       },
     });
-    const payload: NetrinCompositePayload = { 'esp-cpf': { ok: true } };
+    const payload: NetrinCompositePayload = { 'pep-kyc-cpf': { ok: true } };
 
-    await setNetrinCache(client, 'cpf:abc', 'cpf', ['esp-cpf'], payload);
+    await setNetrinCache(client, 'cpf:abc', 'cpf', ['pep-kyc-cpf'], payload);
 
     expect(captured.document_hash).toBe('cpf:abc');
-    expect(captured.encrypted_payload).toContain('esp-cpf');
-    expect(captured.slugs_fetched).toEqual(['esp-cpf']);
+    expect(captured.encrypted_payload).toContain('pep-kyc-cpf');
+    expect(captured.slugs_fetched).toEqual(['pep-kyc-cpf']);
     expect(new Date(captured.expires_at as string).getTime()).toBeGreaterThan(
       Date.now() + (NETRIN_CACHE_TTL_DAYS - 1) * 86400000,
     );

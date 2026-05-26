@@ -569,7 +569,7 @@ export default async function ResultPage({
               <RelatedCompanies
                 status={cardStatus}
                 items={relatedItems}
-                currentPath={currentPath ?? documentHash}
+                currentPath={currentPath || documentHash}
               />
             </>
           ) : (
@@ -603,7 +603,7 @@ export default async function ResultPage({
               <SociosCard
                 status={cardStatus}
                 parentCnpjHash={documentHash}
-                currentPath={currentPath ?? documentHash}
+                currentPath={currentPath || documentHash}
                 socios={socios}
               />
             </>

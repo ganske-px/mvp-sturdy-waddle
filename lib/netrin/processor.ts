@@ -1,6 +1,7 @@
 import type { RunCnpjSearchResult } from './hops/cnpj-search.ts';
 import type { RunCpfSearchResult } from './hops/cpf-search.ts';
 import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store.ts';
+import { CNPJ_SLUGS, CPF_SLUGS } from './types.ts';
 import type { NetrinCompositePayload } from './types.ts';
 
 export type ProcessorJob = {
@@ -42,6 +43,7 @@ export async function processEnrichmentJob(
   let payload: NetrinCompositePayload | null = null;
   const docType = deps.job.rootType;
   const hopNumber: 1 | 2 = docType === 'cpf' ? 1 : 2;
+  const slugs = docType === 'cpf' ? [...CPF_SLUGS] : [...CNPJ_SLUGS];
 
   try {
     const result =
@@ -52,7 +54,7 @@ export async function processEnrichmentJob(
       hop: hopNumber,
       documentHash: deps.job.rootHash,
       documentType: docType,
-      slugs: [],
+      slugs,
       status: statusFromCache(result.cached),
       cached: result.cached,
     });
@@ -64,7 +66,7 @@ export async function processEnrichmentJob(
       hop: hopNumber,
       documentHash: deps.job.rootHash,
       documentType: docType,
-      slugs: [],
+      slugs,
       status: 'error',
       cached: false,
       error: message,

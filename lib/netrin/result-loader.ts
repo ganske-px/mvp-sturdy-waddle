@@ -45,7 +45,7 @@ export type LoadedCall = {
 // ── Decrypted payload container ─────────────────────────────────────────────
 
 export type LoadedPayloads = {
-  /** Hop-1 payload: always the root CPF (or CNPJ when rootType === 'cnpj'). */
+  /** Payload from a CPF root search. Null for CNPJ root jobs (the root CNPJ payload lives in byCnpj[rootHash] instead). */
   hop1: NetrinCompositePayload | null;
   /** Hop-2 payloads keyed by document_hash (CNPJ companies related to the CPF). */
   byCnpj: Record<string, NetrinCompositePayload>;

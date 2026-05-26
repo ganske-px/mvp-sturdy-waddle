@@ -198,9 +198,9 @@ describe('loadEnrichmentForRoot', () => {
   });
 
   it('decrypts and routes payloads into hop1 / byCnpj / byCpf by hop number', async () => {
-    const hop1Payload = { 'esp-cpf': { nome: 'JOAO' } };
+    const hop1Payload = { 'pep-kyc-cpf': { nome: 'JOAO' } };
     const hop2Payload = { 'esp-cnpj-completo': { razaoSocial: 'ACME' } };
-    const hop3Payload = { 'esp-cpf': { nome: 'MARIA' } };
+    const hop3Payload = { 'pep-kyc-cpf': { nome: 'MARIA' } };
 
     const client = fakeClient({
       jobRow: jobFix(),
@@ -266,7 +266,7 @@ describe('loadEnrichmentForRoot', () => {
   });
 
   it('omits a payload when decryption fails for that row', async () => {
-    const hop1Payload = { 'esp-cpf': { nome: 'JOAO' } };
+    const hop1Payload = { 'pep-kyc-cpf': { nome: 'JOAO' } };
     const badCipher = 'enc(BROKEN)';
 
     const client = fakeClient({
@@ -491,5 +491,62 @@ describe('loadEnrichmentForRoot – pivot cache lookup', () => {
     // pivot cache decoded from second cache pass:
     expect(Object.keys(result?.payloads.byCnpj ?? {})).toContain(drilledCnpjHash);
     expect(result?.payloads.byCnpj[drilledCnpjHash]).toEqual(cnpj1Payload);
+  });
+
+  it('decifra cache de CPF sócio do payload raiz CNPJ mesmo sem call no job', async () => {
+    // Root CNPJ has 2 sócios in its pessoas-relacionadas-cnpj payload.
+    // One of them was drilled in another session — cache exists but no call in this job.
+    const rootCnpjPayload = {
+      'pessoas-relacionadas-cnpj': {
+        entidadesRelacionadas: [
+          { cpf: '11111111111', nome: 'JOAO' },
+          { cpf: '22222222222', nome: 'MARIA' }, // not cached
+        ],
+      },
+    };
+    const drilledCpfHash = hashDocument('cpf', '11111111111');
+    const cpfDrilledPayload = { 'pep-kyc-cpf': { currentlyPEP: 'S' } };
+
+    const client = pivotAwareFakeClient({
+      jobRow: jobFix({ root_type: 'cnpj', root_hash: 'cnpj:root' }),
+      callRows: [
+        {
+          id: 'c1',
+          hop: 2,
+          document_hash: 'cnpj:root',
+          document_type: 'cnpj',
+          status: 'success',
+          cached: false,
+          fetched_at: '2026-05-26T00:00:01Z',
+          error: null,
+        },
+      ],
+      firstCacheRows: [
+        {
+          document_hash: 'cnpj:root',
+          document_type: 'cnpj',
+          encrypted_payload: `enc(${JSON.stringify(rootCnpjPayload)})`,
+        },
+      ],
+      pivotCacheRows: [
+        {
+          document_hash: drilledCpfHash,
+          document_type: 'cpf',
+          encrypted_payload: `enc(${JSON.stringify(cpfDrilledPayload)})`,
+        },
+      ],
+    });
+
+    const result = await loadEnrichmentForRoot(client, {
+      userId: 'u-1',
+      rootHash: 'cnpj:root',
+      rootType: 'cnpj',
+    });
+
+    expect(result).not.toBeNull();
+    // Root CNPJ payload landed in byCnpj keyed by rootHash:
+    expect(result?.payloads.byCnpj['cnpj:root']).toEqual(rootCnpjPayload);
+    // Drilled CPF sócio cache was decoded:
+    expect(result?.payloads.byCpf[drilledCpfHash]).toEqual(cpfDrilledPayload);
   });
 });

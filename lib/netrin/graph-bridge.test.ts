@@ -6,7 +6,7 @@ describe('buildNetrinGraph', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909', name: 'JOAO' },
       cpfPayload: {
-        'esp-cpf': { nome: 'JOAO' },
+        'pep-kyc-cpf': { nome: 'JOAO' },
         'empresas-relacionadas-cpf': {
           negociosRelacionados: [
             {

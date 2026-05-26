@@ -12,7 +12,7 @@ describe('NetrinClient.fetchComposta', () => {
     let capturedUrl = '';
     const fetchImpl = makeFetch((url) => {
       capturedUrl = url;
-      return new Response(JSON.stringify({ 'esp-cpf': { ok: true } }), { status: 200 });
+      return new Response(JSON.stringify({ 'pep-kyc-cpf': { ok: true } }), { status: 200 });
     });
     const client = new NetrinClient({
       baseUrl: 'https://api.netrin.com.br',
@@ -20,13 +20,13 @@ describe('NetrinClient.fetchComposta', () => {
       fetch: fetchImpl as unknown as typeof fetch,
     });
 
-    await client.fetchComposta('cpf', '12345678909', ['esp-cpf', 'pep-kyc-cpf']);
+    await client.fetchComposta('cpf', '12345678909', ['pep-kyc-cpf', 'midias-consolidado']);
 
     expect(capturedUrl).toContain('https://api.netrin.com.br/v1/consulta-composta?');
     expect(capturedUrl).toContain('token=TKN');
     expect(capturedUrl).toContain('cpf=12345678909');
-    expect(capturedUrl).toMatch(/s=esp-cpf/);
     expect(capturedUrl).toMatch(/s=pep-kyc-cpf/);
+    expect(capturedUrl).toMatch(/s=midias-consolidado/);
   });
 
   it('routes cnpj documents with cnpj= query param', async () => {
@@ -70,7 +70,7 @@ describe('NetrinClient.fetchComposta', () => {
     const fetchImpl = makeFetch(() => {
       attempt++;
       if (attempt < 3) return new Response('upstream', { status: 502 });
-      return new Response(JSON.stringify({ 'esp-cpf': { ok: true } }), { status: 200 });
+      return new Response(JSON.stringify({ 'pep-kyc-cpf': { ok: true } }), { status: 200 });
     });
     const sleepCalls: number[] = [];
     const client = new NetrinClient({
@@ -83,11 +83,11 @@ describe('NetrinClient.fetchComposta', () => {
       initialBackoffMs: 10,
     });
 
-    const result = await client.fetchComposta('cpf', '12345678909', ['esp-cpf']);
+    const result = await client.fetchComposta('cpf', '12345678909', ['pep-kyc-cpf']);
 
     expect(attempt).toBe(3);
     expect(sleepCalls).toEqual([10, 20]);
-    expect(result['esp-cpf']).toEqual({ ok: true });
+    expect(result['pep-kyc-cpf']).toEqual({ ok: true });
   });
 
   it('throws NetrinError after maxRetries 5xx failures', async () => {
@@ -101,9 +101,9 @@ describe('NetrinClient.fetchComposta', () => {
       initialBackoffMs: 1,
     });
 
-    await expect(client.fetchComposta('cpf', '12345678909', ['esp-cpf'])).rejects.toBeInstanceOf(
-      NetrinError,
-    );
+    await expect(
+      client.fetchComposta('cpf', '12345678909', ['pep-kyc-cpf']),
+    ).rejects.toBeInstanceOf(NetrinError);
   });
 
   it('throws immediately on 401', async () => {
@@ -113,10 +113,12 @@ describe('NetrinClient.fetchComposta', () => {
       token: 'TKN',
       fetch: fetchImpl as unknown as typeof fetch,
     });
-    await expect(client.fetchComposta('cpf', '12345678909', ['esp-cpf'])).rejects.toMatchObject({
-      name: 'NetrinError',
-      status: 401,
-    });
+    await expect(client.fetchComposta('cpf', '12345678909', ['pep-kyc-cpf'])).rejects.toMatchObject(
+      {
+        name: 'NetrinError',
+        status: 401,
+      },
+    );
   });
 
   it('never leaks the token in error messages', async () => {
@@ -128,7 +130,7 @@ describe('NetrinClient.fetchComposta', () => {
     });
     let err: Error | undefined;
     try {
-      await client.fetchComposta('cpf', '12345678909', ['esp-cpf']);
+      await client.fetchComposta('cpf', '12345678909', ['pep-kyc-cpf']);
     } catch (e) {
       err = e as Error;
     }
