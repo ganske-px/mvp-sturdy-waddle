@@ -217,7 +217,8 @@ export type Database = {
             | 'admin_user_set_role'
             | 'admin_user_permission_changed'
             | 'view_network'
-            | 'expand_network_node';
+            | 'expand_network_node'
+            | 'enrichment_call';
           search_type: 'cpf' | 'cnpj' | 'name' | null;
           document_hash: string | null;
           result_count: number | null;
@@ -241,7 +242,8 @@ export type Database = {
             | 'admin_user_set_role'
             | 'admin_user_permission_changed'
             | 'view_network'
-            | 'expand_network_node';
+            | 'expand_network_node'
+            | 'enrichment_call';
           search_type?: 'cpf' | 'cnpj' | 'name' | null;
           document_hash?: string | null;
           result_count?: number | null;
@@ -265,7 +267,8 @@ export type Database = {
             | 'admin_user_set_role'
             | 'admin_user_permission_changed'
             | 'view_network'
-            | 'expand_network_node';
+            | 'expand_network_node'
+            | 'enrichment_call';
           search_type?: 'cpf' | 'cnpj' | 'name' | null;
           document_hash?: string | null;
           result_count?: number | null;
@@ -328,6 +331,120 @@ export type Database = {
           evidence?: Record<string, unknown>;
           first_seen_at?: string;
           last_seen_at?: string;
+        };
+      };
+      netrin_cache: {
+        Row: {
+          document_hash: string;
+          document_type: 'cpf' | 'cnpj';
+          encrypted_payload: string;
+          slugs_fetched: string[];
+          fetched_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          document_hash: string;
+          document_type: 'cpf' | 'cnpj';
+          encrypted_payload: string;
+          slugs_fetched: string[];
+          fetched_at?: string;
+          expires_at?: string;
+        };
+        Update: {
+          document_hash?: string;
+          document_type?: 'cpf' | 'cnpj';
+          encrypted_payload?: string;
+          slugs_fetched?: string[];
+          fetched_at?: string;
+          expires_at?: string;
+        };
+      };
+      enrichment_jobs: {
+        Row: {
+          id: string;
+          user_id: string;
+          root_hash: string;
+          root_type: 'cpf' | 'cnpj';
+          status: 'pending' | 'running' | 'completed' | 'partial' | 'failed';
+          hop1_status: 'success' | 'error' | 'cache_hit' | 'skipped' | null;
+          hop2_total: number;
+          hop2_done: number;
+          hop3_total: number;
+          hop3_done: number;
+          started_at: string;
+          finished_at: string | null;
+          error: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          root_hash: string;
+          root_type: 'cpf' | 'cnpj';
+          status: 'pending' | 'running' | 'completed' | 'partial' | 'failed';
+          hop1_status?: 'success' | 'error' | 'cache_hit' | 'skipped' | null;
+          hop2_total?: number;
+          hop2_done?: number;
+          hop3_total?: number;
+          hop3_done?: number;
+          started_at?: string;
+          finished_at?: string | null;
+          error?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          root_hash?: string;
+          root_type?: 'cpf' | 'cnpj';
+          status?: 'pending' | 'running' | 'completed' | 'partial' | 'failed';
+          hop1_status?: 'success' | 'error' | 'cache_hit' | 'skipped' | null;
+          hop2_total?: number;
+          hop2_done?: number;
+          hop3_total?: number;
+          hop3_done?: number;
+          started_at?: string;
+          finished_at?: string | null;
+          error?: string | null;
+        };
+      };
+      enrichment_job_calls: {
+        Row: {
+          id: string;
+          job_id: string;
+          hop: 1 | 2 | 3;
+          document_hash: string;
+          document_type: 'cpf' | 'cnpj';
+          slugs: string[];
+          status: 'pending' | 'running' | 'success' | 'error' | 'cache_hit';
+          cached: boolean;
+          fetched_at: string | null;
+          error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          job_id: string;
+          hop: 1 | 2 | 3;
+          document_hash: string;
+          document_type: 'cpf' | 'cnpj';
+          slugs: string[];
+          status: 'pending' | 'running' | 'success' | 'error' | 'cache_hit';
+          cached?: boolean;
+          fetched_at?: string | null;
+          error?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          job_id?: string;
+          hop?: 1 | 2 | 3;
+          document_hash?: string;
+          document_type?: 'cpf' | 'cnpj';
+          slugs?: string[];
+          status?: 'pending' | 'running' | 'success' | 'error' | 'cache_hit';
+          cached?: boolean;
+          fetched_at?: string | null;
+          error?: string | null;
+          created_at?: string;
         };
       };
     };
