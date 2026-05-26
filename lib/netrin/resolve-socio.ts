@@ -37,7 +37,7 @@ export async function resolveSocioCpf(
     try {
       if (hashDocument('cpf', cpf) === input.cpfHash) return cpf;
     } catch {
-      continue;
+      // hashDocument failed — skip
     }
   }
 

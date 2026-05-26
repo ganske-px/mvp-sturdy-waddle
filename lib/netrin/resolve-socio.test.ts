@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { hashDocument } from '@/lib/hash';
+import { describe, expect, it } from 'vitest';
 import { resolveSocioCpf } from './resolve-socio';
 
 function makeAdmin(opts: {
@@ -48,10 +48,10 @@ describe('resolveSocioCpf', () => {
   });
 
   it('returns null when DB query errors', async () => {
-    const result = await resolveSocioCpf(
-      makeAdmin({ error: { message: 'db down' } }),
-      { parentCnpjHash: 'cnpj:x', cpfHash: 'cpf:x' },
-    );
+    const result = await resolveSocioCpf(makeAdmin({ error: { message: 'db down' } }), {
+      parentCnpjHash: 'cnpj:x',
+      cpfHash: 'cpf:x',
+    });
     expect(result).toBeNull();
   });
 

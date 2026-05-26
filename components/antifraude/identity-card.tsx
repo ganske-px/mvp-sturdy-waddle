@@ -34,8 +34,7 @@ export function IdentityCard({
               <span className="text-muted-foreground">Nome:</span> {nome ?? '—'}
             </div>
             <div>
-              <span className="text-muted-foreground">Nascimento:</span>{' '}
-              {dataNascimento ?? '—'}
+              <span className="text-muted-foreground">Nascimento:</span> {dataNascimento ?? '—'}
               {typeof idade === 'number' ? (
                 <span className="text-muted-foreground"> · {idade} anos</span>
               ) : null}

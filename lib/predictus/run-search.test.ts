@@ -17,11 +17,11 @@ vi.mock('@/lib/crypto/vault', () => ({
   encryptText: vi.fn().mockResolvedValue('enc-bytes'),
 }));
 
+import { findOrCreateJob } from '@/lib/netrin/job-store';
 import { getCachedResults, setCachedResults } from '@/lib/predictus/cache';
 import { createServerPredictusClient } from '@/lib/predictus/server-client';
-import { findOrCreateJob } from '@/lib/netrin/job-store';
 import type { RunSearchContext } from './run-search';
-import { runCpfSearch, runCnpjSearch } from './run-search';
+import { runCnpjSearch, runCpfSearch } from './run-search';
 
 function makeCtx(overrides: Partial<RunSearchContext> = {}): RunSearchContext {
   const insertMock = vi.fn().mockResolvedValue({ error: null });

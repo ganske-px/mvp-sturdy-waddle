@@ -43,18 +43,21 @@ describe('runCpfSearch', () => {
   });
 
   it('calls Netrin and writes cache on miss', async () => {
-    const fetchSpy = vi.fn(async () => ({
-      CpfBirthdate: { nome: 'JOAO' },
-      empresasRelacionadasCPF: {
-        negociosRelacionados: [
-          {
-            entidadeRelacionadaDocumento: '98765432000110',
-            entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+    const fetchSpy = vi.fn(
+      async () =>
+        ({
+          CpfBirthdate: { nome: 'JOAO' },
+          empresasRelacionadasCPF: {
+            negociosRelacionados: [
+              {
+                entidadeRelacionadaDocumento: '98765432000110',
+                entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+              },
+            ],
           },
-        ],
-      },
-      // as never: mock payload uses friendly camelCase (CpfBirthdate), but Netrin returns snake_case; cast bridges the shape
-    } as never));
+          // as never: mock payload uses friendly camelCase (CpfBirthdate), but Netrin returns snake_case; cast bridges the shape
+        }) as never,
+    );
     const setSpy = vi.fn(async () => {});
     const result = await runCpfSearch({
       documentRaw: '12345678909',

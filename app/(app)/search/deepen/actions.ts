@@ -18,7 +18,9 @@ export type DeepenResult = { ok: false; error: string };
 
 export async function deepenDocument(input: DeepenInput): Promise<DeepenResult> {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: 'Não autenticado.' };
 
   const admin = createAdminClient();

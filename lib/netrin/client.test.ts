@@ -142,8 +142,6 @@ describe('NetrinClient.fetchComposta', () => {
       token: 'TKN',
       fetch: fetchImpl as unknown as typeof fetch,
     });
-    await expect(
-      client.fetchComposta('cpf', '12345678909', [...CPF_SLUGS]),
-    ).resolves.toBeDefined();
+    await expect(client.fetchComposta('cpf', '12345678909', [...CPF_SLUGS])).resolves.toBeDefined();
   });
 });

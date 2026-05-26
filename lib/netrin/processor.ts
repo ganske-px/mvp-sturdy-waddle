@@ -1,5 +1,5 @@
-import type { RunCpfSearchResult } from './hops/cpf-search.ts';
 import type { RunCnpjSearchResult } from './hops/cnpj-search.ts';
+import type { RunCpfSearchResult } from './hops/cpf-search.ts';
 import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store.ts';
 import type { NetrinCompositePayload } from './types.ts';
 
@@ -17,10 +17,7 @@ export type ProcessorDeps = {
     status: EnrichmentJobStatus,
     opts?: { error?: string; finished?: boolean },
   ) => Promise<void>;
-  setNetrinStatus: (
-    jobId: string,
-    status: 'success' | 'error' | 'cache_hit',
-  ) => Promise<void>;
+  setNetrinStatus: (jobId: string, status: 'success' | 'error' | 'cache_hit') => Promise<void>;
   recordCall: (input: RecordCallInput) => Promise<void>;
   runCpfSearch: () => Promise<RunCpfSearchResult>;
   runCnpjSearch: (cnpjRaw: string) => Promise<RunCnpjSearchResult>;
@@ -48,9 +45,7 @@ export async function processEnrichmentJob(
 
   try {
     const result =
-      docType === 'cpf'
-        ? await deps.runCpfSearch()
-        : await deps.runCnpjSearch(deps.job.rootRaw);
+      docType === 'cpf' ? await deps.runCpfSearch() : await deps.runCnpjSearch(deps.job.rootRaw);
     payload = result.payload;
     await deps.recordCall({
       jobId,

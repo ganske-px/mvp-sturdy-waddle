@@ -5,7 +5,7 @@ import { MediaCard } from '@/components/antifraude/media-card';
 import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
 import { SancoesCardCnpj } from '@/components/antifraude/sancoes-card-cnpj';
-import { SociosCard, type SocioEntry } from '@/components/antifraude/socios-card';
+import { type SocioEntry, SociosCard } from '@/components/antifraude/socios-card';
 import type { RelatedCompanyEntry } from '@/components/antifraude/types';
 import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
 import { NetworkCta } from '@/components/network-cta';
@@ -322,10 +322,7 @@ type PessoasRelCnpjEntity = {
   percentualParticipacaoSociedade?: unknown;
 };
 
-function extractSocios(
-  p: NetrinCompositePayload,
-  cachedCpfHashes: Set<string>,
-): SocioEntry[] {
+function extractSocios(p: NetrinCompositePayload, cachedCpfHashes: Set<string>): SocioEntry[] {
   const slug = (p as Record<string, unknown>)['pessoas-relacionadas-cnpj'] as
     | { entidadesRelacionadas?: PessoasRelCnpjEntity[] }
     | null
@@ -345,9 +342,7 @@ function extractSocios(
       maskedPreview: maskCpf(cpfRaw),
       nome: typeof item.nome === 'string' ? item.nome : undefined,
       vinculo:
-        typeof item.vinculoDoRelacionamento === 'string'
-          ? item.vinculoDoRelacionamento
-          : undefined,
+        typeof item.vinculoDoRelacionamento === 'string' ? item.vinculoDoRelacionamento : undefined,
       percentual:
         typeof item.percentualParticipacaoSociedade === 'number'
           ? item.percentualParticipacaoSociedade

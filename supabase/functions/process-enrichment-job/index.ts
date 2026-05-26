@@ -6,13 +6,9 @@ import { upsertGraph } from '../../../lib/graph/writer.ts';
 import { getNetrinCache, setNetrinCache } from '../../../lib/netrin/cache.ts';
 import { NetrinClient } from '../../../lib/netrin/client.ts';
 import { buildNetrinGraph } from '../../../lib/netrin/graph-bridge.ts';
-import { runCpfSearch } from '../../../lib/netrin/hops/cpf-search.ts';
 import { runCnpjSearch } from '../../../lib/netrin/hops/cnpj-search.ts';
-import {
-  recordCall,
-  setJobStatus,
-  setNetrinStatus,
-} from '../../../lib/netrin/job-store.ts';
+import { runCpfSearch } from '../../../lib/netrin/hops/cpf-search.ts';
+import { recordCall, setJobStatus, setNetrinStatus } from '../../../lib/netrin/job-store.ts';
 import { processEnrichmentJob } from '../../../lib/netrin/processor.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;

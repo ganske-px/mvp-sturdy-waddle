@@ -3,9 +3,9 @@ import {
   bumpHopDone,
   findOrCreateJob,
   recordCall,
-  setNetrinStatus,
   setHopTotals,
   setJobStatus,
+  setNetrinStatus,
 } from './job-store';
 
 function clientWith(

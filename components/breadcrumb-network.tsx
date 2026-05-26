@@ -38,11 +38,12 @@ export async function BreadcrumbNetwork({ pathParam, currentHash }: BreadcrumbNe
   );
 
   // Collapse if too long: first + ellipsis + last 3
+  const firstItem = items[0];
   const displayed: (SearchRow & { collapsed?: boolean })[] =
-    items.length <= 5
+    items.length <= 5 || !firstItem
       ? items
       : [
-          items[0]!,
+          firstItem,
           { document_hash: '__ellipsis__', term_preview: '…', search_type: 'cpf', collapsed: true },
           ...items.slice(-3),
         ];
