@@ -1,50 +1,43 @@
 import { EnrichmentRealtime } from '@/components/antifraude/enrichment-realtime';
-import { IdentityCard } from '@/components/antifraude/identity-card';
-import { IdentityCardCnpj } from '@/components/antifraude/identity-card-cnpj';
+import { IdentityHero } from '@/components/antifraude/identity-hero';
 import { MediaCard } from '@/components/antifraude/media-card';
+import { NetworkRail } from '@/components/antifraude/network-rail';
 import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
 import { RelatedPeople } from '@/components/antifraude/related-people';
+import { ResultSection } from '@/components/antifraude/result-section';
 import { SancoesCardCnpj } from '@/components/antifraude/sancoes-card-cnpj';
 import { SearchRowRealtime } from '@/components/antifraude/search-row-realtime';
 import { type SocioEntry, SociosCard } from '@/components/antifraude/socios-card';
 import type { RelatedCompanyEntry, RelatedPersonEntry } from '@/components/antifraude/types';
 import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
-import { NetworkCta } from '@/components/network-cta';
 import { ProcessResultsTable } from '@/components/process-results-table';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
+import { getSubgraphStats } from '@/lib/graph/subgraph-stats';
 import { hashDocument } from '@/lib/hash';
 import { extractRelatedCpfs } from '@/lib/netrin/parsers/related-cpfs';
+import { isFirstDegree } from '@/lib/netrin/relationship-labels';
 import { loadEnrichmentForRoot } from '@/lib/netrin/result-loader';
 import type { NetrinCompositePayload } from '@/lib/netrin/types';
 import { getCachedResults } from '@/lib/predictus/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { mask as maskCpf } from '@/lib/validators/cpf';
-import { AlertCircleIcon, ClockIcon, Loader2Icon, SearchIcon } from 'lucide-react';
+import {
+  AlertCircleIcon,
+  BuildingIcon,
+  FileTextIcon,
+  Loader2Icon,
+  MegaphoneIcon,
+  SearchIcon,
+  ShieldAlertIcon,
+  UsersIcon,
+} from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 export const metadata = {
   title: 'Resultado da consulta — Radar PX',
 };
-
-const TYPE_LABELS: Record<'cpf' | 'cnpj' | 'name', string> = {
-  cpf: 'CPF',
-  cnpj: 'CNPJ',
-  name: 'Nome',
-};
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 type SearchRow = {
   search_type: 'cpf' | 'cnpj' | 'name';
@@ -431,6 +424,23 @@ export default async function ResultPage({
   const canSeeNetwork = user.role === 'admin' || perms.has('search_network');
   const networkHash = searchRow.search_type === 'name' ? null : documentHash;
 
+  let networkStats = {
+    nodes: 0,
+    edges: 0,
+    people: 0,
+    companies: 0,
+    familyEdges: 0,
+    corporateEdges: 0,
+    processEdges: 0,
+  };
+  if (networkHash && canSeeNetwork) {
+    try {
+      networkStats = await getSubgraphStats(networkHash);
+    } catch (e) {
+      console.warn('result page: subgraph stats failed', e);
+    }
+  }
+
   // Derive antifraude card props from hop1 payload
   const hop1 = enrichment?.payloads.hop1 ?? null;
   const byCnpj = enrichment?.payloads.byCnpj ?? {};
@@ -466,192 +476,236 @@ export default async function ResultPage({
           ? ('error' as const)
           : ('success' as const);
 
+  const nucleoFamiliar = relatedPeople.filter((p) => isFirstDegree(p.tipoRelacionamento));
+
+  const cpfRisk = [
+    { label: 'PEP', active: !!pepProps?.currentlyPEP },
+    {
+      label: 'Sanções',
+      active: !!pepProps?.currentlySanctioned || !!pepProps?.previouslySanctioned,
+    },
+  ];
+  const cnpjRisk = [{ label: 'Sanções', active: !!cnpjSancoesProps?.sancionado }];
+
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
+    <main className="mx-auto w-full max-w-7xl px-6 py-12">
       <SearchRowRealtime documentHash={documentHash} />
-      <header className="flex flex-col gap-2">
-        <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
-          Consulta arquivada
-        </span>
-        <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground">
-          {searchRow.term_preview}
-        </h1>
-      </header>
+      {job ? <EnrichmentRealtime jobId={job.id} /> : null}
 
       <BreadcrumbNetwork pathParam={currentPath} currentHash={documentHash} />
 
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <CardTitle>
-                {TYPE_LABELS[searchRow.search_type]} · {searchRow.result_count} resultado
-                {searchRow.result_count === 1 ? '' : 's'}
-              </CardTitle>
-              <CardDescription>
-                Pesquisada em {formatDateTime(searchRow.created_at)}.
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              {cached ? (
-                <Badge variant="info">
-                  <ClockIcon />
-                  Em cache
-                </Badge>
-              ) : null}
-              <NetworkCta networkHash={networkHash} canSeeNetwork={canSeeNetwork} />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {searchRow.error_message ? (
-            <div
-              role="alert"
-              className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-            >
-              <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
-              <span>{searchRow.error_message}</span>
-            </div>
-          ) : searchRow.status === 'pending' ? (
-            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
-              <Loader2Icon className="size-8 animate-spin text-muted-foreground/60" />
-              <p className="text-sm font-medium">Consultando processos…</p>
-              <p className="text-xs text-muted-foreground">
-                A consulta está em andamento. Esta tela atualiza automaticamente.
-              </p>
-            </div>
-          ) : !cached ? (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
-              <SearchIcon className="size-8 text-muted-foreground/60" />
-              <p className="text-sm font-medium">Resultados não estão mais em cache</p>
-              <p className="text-xs text-muted-foreground">
-                O cache tem TTL de 30 dias. Refaça a busca para ver os processos atualizados.
-              </p>
-            </div>
-          ) : cached.results.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
-              <SearchIcon className="size-8 text-muted-foreground/60" />
-              <p className="text-sm font-medium">Nenhum processo encontrado</p>
-              <p className="text-xs text-muted-foreground">
-                O documento aparentava estar limpo na fonte de dados.
-              </p>
-            </div>
+      <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {/* ── Coluna principal ─────────────────────────────────────────── */}
+        <div className="flex flex-col gap-6">
+          {searchRow.search_type === 'cnpj' ? (
+            <IdentityHero
+              tipo="cnpj"
+              termPreview={searchRow.term_preview}
+              situacaoCadastral={cnpjIdentityProps?.situacaoCadastral}
+              jobRunning={jobRunning}
+              risk={cnpjRisk}
+              razaoSocial={cnpjIdentityProps?.razaoSocial}
+              nomeFantasia={cnpjIdentityProps?.nomeFantasia}
+              capitalSocial={cnpjIdentityProps?.capitalSocial}
+              atividadePrincipal={cnpjIdentityProps?.atividadePrincipal}
+              dataAbertura={cnpjIdentityProps?.dataAbertura}
+            />
           ) : (
-            <ProcessResultsTable results={cached.results} />
+            <IdentityHero
+              tipo="cpf"
+              termPreview={searchRow.term_preview}
+              situacaoCadastral={identityProps?.situacaoCadastral}
+              jobRunning={jobRunning}
+              risk={cpfRisk}
+              nome={identityProps?.nome}
+              idade={identityProps?.idade}
+              genero={identityProps?.genero}
+              nomeMae={identityProps?.nomeMae}
+              nucleo={nucleoFamiliar}
+              parentCpfHash={documentHash}
+              currentPath={currentPath || documentHash}
+            />
           )}
-        </CardContent>
-      </Card>
 
-      {/* Antifraude section — only rendered when an enrichment job exists */}
-      {job ? (
-        <section className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <h2 className="font-heading text-xl font-semibold tracking-tight text-foreground">
-              Análise antifraude
-            </h2>
-            <div className="flex flex-wrap gap-2 text-xs">
-              <Badge
-                variant={
-                  job.status === 'completed'
-                    ? 'success'
-                    : job.status === 'failed'
-                      ? 'destructive'
-                      : 'secondary'
-                }
+          {/* Rede no mobile (o trilho sticky some abaixo de lg) */}
+          <div className="lg:hidden">
+            <NetworkRail
+              stats={networkStats}
+              networkHash={networkHash}
+              canSeeNetwork={canSeeNetwork}
+            />
+          </div>
+
+          {/* Processos judiciais */}
+          <ResultSection
+            title="Processos judiciais"
+            icon={<FileTextIcon className="size-4" />}
+            defaultOpen
+            summary={`${searchRow.result_count} processo${searchRow.result_count === 1 ? '' : 's'}`}
+          >
+            {searchRow.error_message ? (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
               >
-                {job.status === 'completed'
-                  ? 'Concluído'
-                  : job.status === 'partial'
-                    ? 'Parcial'
-                    : job.status === 'failed'
-                      ? 'Erro'
-                      : job.status === 'running'
-                        ? 'Em andamento'
-                        : 'Pendente'}
-              </Badge>
-            </div>
-          </div>
-
-          <EnrichmentRealtime jobId={job.id} />
-
-          {searchRow.search_type === 'cpf' ? (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <IdentityCard
-                  status={cardStatus}
-                  nome={identityProps?.nome}
-                  dataNascimento={identityProps?.dataNascimento}
-                  situacaoCadastral={identityProps?.situacaoCadastral}
-                  nomeMae={identityProps?.nomeMae}
-                  idade={identityProps?.idade}
-                  genero={identityProps?.genero}
-                />
-                <PepCard
-                  status={cardStatus}
-                  currentlyPEP={pepProps?.currentlyPEP}
-                  currentlySanctioned={pepProps?.currentlySanctioned}
-                  previouslySanctioned={pepProps?.previouslySanctioned}
-                  historicoCount={pepProps?.historicoCount}
-                />
-                <MediaCard
-                  status={cardStatus}
-                  mencoes={mediaProps?.mencoes}
-                  qtdMidias={mediaProps?.qtdMidias}
-                  qtdListas={mediaProps?.qtdListas}
-                  qtdGov={mediaProps?.qtdGov}
-                  qtdAmb={mediaProps?.qtdAmb}
-                />
+                <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+                <span>{searchRow.error_message}</span>
               </div>
-              <RelatedCompanies
-                status={cardStatus}
-                items={relatedItems}
-                currentPath={currentPath || documentHash}
-              />
-              <RelatedPeople
-                status={cardStatus}
-                parentCpfHash={documentHash}
-                currentPath={currentPath || documentHash}
-                people={relatedPeople}
-              />
-            </>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <IdentityCardCnpj
-                  status={cardStatus}
-                  razaoSocial={cnpjIdentityProps?.razaoSocial}
-                  nomeFantasia={cnpjIdentityProps?.nomeFantasia}
-                  situacaoCadastral={cnpjIdentityProps?.situacaoCadastral}
-                  capitalSocial={cnpjIdentityProps?.capitalSocial}
-                  atividadePrincipal={cnpjIdentityProps?.atividadePrincipal}
-                  dataAbertura={cnpjIdentityProps?.dataAbertura}
-                />
-                <SancoesCardCnpj
-                  status={cardStatus}
-                  sancionado={cnpjSancoesProps?.sancionado}
-                  ceis={cnpjSancoesProps?.ceis}
-                  cnep={cnpjSancoesProps?.cnep}
-                  trabalhoEscravo={cnpjSancoesProps?.trabalhoEscravo}
-                />
-                <MediaCard
-                  status={cardStatus}
-                  mencoes={cnpjMediaProps?.mencoes}
-                  qtdMidias={cnpjMediaProps?.qtdMidias}
-                  qtdListas={cnpjMediaProps?.qtdListas}
-                  qtdGov={cnpjMediaProps?.qtdGov}
-                  qtdAmb={cnpjMediaProps?.qtdAmb}
-                />
+            ) : searchRow.status === 'pending' ? (
+              <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
+                <Loader2Icon className="size-8 animate-spin text-muted-foreground/60" />
+                <p className="text-sm font-medium">Consultando processos…</p>
+                <p className="text-xs text-muted-foreground">
+                  A consulta está em andamento. Esta tela atualiza automaticamente.
+                </p>
               </div>
-              <SociosCard
-                status={cardStatus}
-                parentCnpjHash={documentHash}
-                currentPath={currentPath || documentHash}
-                socios={socios}
-              />
-            </>
-          )}
-        </section>
-      ) : null}
+            ) : !cached ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
+                <SearchIcon className="size-8 text-muted-foreground/60" />
+                <p className="text-sm font-medium">Resultados indisponíveis</p>
+                <p className="text-xs text-muted-foreground">
+                  Refaça a busca para ver os processos atualizados.
+                </p>
+              </div>
+            ) : cached.results.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
+                <SearchIcon className="size-8 text-muted-foreground/60" />
+                <p className="text-sm font-medium">Nenhum processo encontrado</p>
+                <p className="text-xs text-muted-foreground">
+                  O documento aparentava estar limpo na fonte de dados.
+                </p>
+              </div>
+            ) : (
+              <ProcessResultsTable results={cached.results} />
+            )}
+          </ResultSection>
+
+          {/* Seções antifraude — só quando há job de enriquecimento */}
+          {job ? (
+            searchRow.search_type === 'cpf' ? (
+              <>
+                <ResultSection
+                  title="Mídia & risco reputacional"
+                  icon={<MegaphoneIcon className="size-4" />}
+                  summary={`${mediaProps?.mencoes ?? 0} menções`}
+                >
+                  <MediaCard
+                    bare
+                    status={cardStatus}
+                    mencoes={mediaProps?.mencoes}
+                    qtdMidias={mediaProps?.qtdMidias}
+                    qtdListas={mediaProps?.qtdListas}
+                    qtdGov={mediaProps?.qtdGov}
+                    qtdAmb={mediaProps?.qtdAmb}
+                  />
+                </ResultSection>
+
+                <ResultSection
+                  title="PEP / Sanções"
+                  icon={<ShieldAlertIcon className="size-4" />}
+                  summary={pepProps?.currentlyPEP ? 'PEP' : 'Sem PEP'}
+                >
+                  <PepCard
+                    bare
+                    status={cardStatus}
+                    currentlyPEP={pepProps?.currentlyPEP}
+                    currentlySanctioned={pepProps?.currentlySanctioned}
+                    previouslySanctioned={pepProps?.previouslySanctioned}
+                    historicoCount={pepProps?.historicoCount}
+                  />
+                </ResultSection>
+
+                <div className="flex flex-col gap-3">
+                  <h2 className="px-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    Vínculos
+                  </h2>
+                  <ResultSection
+                    title="Pessoas relacionadas"
+                    icon={<UsersIcon className="size-4" />}
+                    summary={`${relatedPeople.length}`}
+                  >
+                    <RelatedPeople
+                      bare
+                      status={cardStatus}
+                      parentCpfHash={documentHash}
+                      currentPath={currentPath || documentHash}
+                      people={relatedPeople}
+                    />
+                  </ResultSection>
+                  <ResultSection
+                    title="Empresas relacionadas"
+                    icon={<BuildingIcon className="size-4" />}
+                    summary={`${relatedItems.length}`}
+                  >
+                    <RelatedCompanies
+                      bare
+                      status={cardStatus}
+                      items={relatedItems}
+                      currentPath={currentPath || documentHash}
+                    />
+                  </ResultSection>
+                </div>
+              </>
+            ) : (
+              <>
+                <ResultSection
+                  title="Mídia & risco reputacional"
+                  icon={<MegaphoneIcon className="size-4" />}
+                  summary={`${cnpjMediaProps?.mencoes ?? 0} menções`}
+                >
+                  <MediaCard
+                    bare
+                    status={cardStatus}
+                    mencoes={cnpjMediaProps?.mencoes}
+                    qtdMidias={cnpjMediaProps?.qtdMidias}
+                    qtdListas={cnpjMediaProps?.qtdListas}
+                    qtdGov={cnpjMediaProps?.qtdGov}
+                    qtdAmb={cnpjMediaProps?.qtdAmb}
+                  />
+                </ResultSection>
+
+                <ResultSection
+                  title="Sanções e restrições"
+                  icon={<ShieldAlertIcon className="size-4" />}
+                  summary={cnpjSancoesProps?.sancionado ? 'Sancionado' : 'Sem restrições'}
+                >
+                  <SancoesCardCnpj
+                    bare
+                    status={cardStatus}
+                    sancionado={cnpjSancoesProps?.sancionado}
+                    ceis={cnpjSancoesProps?.ceis}
+                    cnep={cnpjSancoesProps?.cnep}
+                    trabalhoEscravo={cnpjSancoesProps?.trabalhoEscravo}
+                  />
+                </ResultSection>
+
+                <ResultSection
+                  title="Sócios"
+                  icon={<UsersIcon className="size-4" />}
+                  summary={`${socios.length}`}
+                >
+                  <SociosCard
+                    bare
+                    status={cardStatus}
+                    parentCnpjHash={documentHash}
+                    currentPath={currentPath || documentHash}
+                    socios={socios}
+                  />
+                </ResultSection>
+              </>
+            )
+          ) : null}
+        </div>
+
+        {/* ── Trilho de rede (sticky, desktop) ─────────────────────────── */}
+        <div className="hidden lg:block">
+          <NetworkRail
+            stats={networkStats}
+            networkHash={networkHash}
+            canSeeNetwork={canSeeNetwork}
+          />
+        </div>
+      </div>
     </main>
   );
 }

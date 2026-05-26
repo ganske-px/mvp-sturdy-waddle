@@ -23,6 +23,7 @@ export type PepCardProps = {
   currentlySanctioned?: boolean;
   previouslySanctioned?: boolean;
   historicoCount?: number;
+  bare?: boolean;
 };
 
 export type MediaCardProps = {
@@ -32,6 +33,7 @@ export type MediaCardProps = {
   qtdListas?: number;
   qtdGov?: number;
   qtdAmb?: number;
+  bare?: boolean;
 };
 
 export type RelatedCompanyEntry = {
@@ -52,6 +54,7 @@ export type RelatedCompaniesProps = {
   status: AntifraudeStatus;
   items: RelatedCompanyEntry[];
   currentPath?: string;
+  bare?: boolean;
 };
 
 export type RelatedPersonEntry = {
