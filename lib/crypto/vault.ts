@@ -48,3 +48,29 @@ export async function decryptText(
   }
   return data;
 }
+
+/**
+ * Encrypts plaintext via the `encrypt_netrin` Postgres function, which uses
+ * the `netrin_cache_key` Vault secret. Mirror of `encryptText` for the
+ * Netrin cache table — kept separate so Netrin and Predictus keys are
+ * independently rotatable.
+ */
+export async function encryptNetrinText(
+  client: SupabaseClient<Database>,
+  plaintext: string,
+): Promise<string> {
+  const { data, error } = await client.rpc('encrypt_netrin' as never, { plaintext } as never);
+  if (error) throw new Error(`encrypt_netrin RPC failed: ${error.message}`);
+  if (typeof data !== 'string') throw new Error('encrypt_netrin returned non-string');
+  return data;
+}
+
+export async function decryptNetrinText(
+  client: SupabaseClient<Database>,
+  ciphertext: string,
+): Promise<string> {
+  const { data, error } = await client.rpc('decrypt_netrin' as never, { ciphertext } as never);
+  if (error) throw new Error(`decrypt_netrin RPC failed: ${error.message}`);
+  if (typeof data !== 'string') throw new Error('decrypt_netrin returned non-string');
+  return data;
+}
