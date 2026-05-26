@@ -1,3 +1,4 @@
+import { EnrichmentRealtime } from '@/components/antifraude/enrichment-realtime';
 import { IdentityCard } from '@/components/antifraude/identity-card';
 import { MediaCard } from '@/components/antifraude/media-card';
 import { PepCard } from '@/components/antifraude/pep-card';
@@ -400,7 +401,7 @@ export default async function ResultPage({
             </div>
           </div>
 
-          {/* TODO: EnrichmentRealtime hook from Task H3 */}
+          <EnrichmentRealtime jobId={job.id} />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <IdentityCard
