@@ -251,11 +251,14 @@ function buildRelatedCompanies(
 
 export default async function ResultPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ hash: string }>;
+  searchParams: Promise<{ path?: string }>;
 }) {
   const user = await requireAuth();
   const { hash } = await params;
+  const { path: currentPath } = await searchParams;
   const documentHash = decodeURIComponent(hash);
 
   const supabase = await createClient();
@@ -449,7 +452,7 @@ export default async function ResultPage({
             />
           </div>
 
-          <RelatedCompanies status={cardStatus} items={relatedItems} />
+          <RelatedCompanies status={cardStatus} items={relatedItems} currentPath={currentPath} />
         </section>
       ) : null}
     </main>

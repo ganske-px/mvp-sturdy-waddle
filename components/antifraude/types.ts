@@ -51,4 +51,5 @@ export type RelatedCompanyEntry = {
 export type RelatedCompaniesProps = {
   status: AntifraudeStatus;
   items: RelatedCompanyEntry[];
+  currentPath?: string;
 };
