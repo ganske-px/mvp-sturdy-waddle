@@ -1,3 +1,4 @@
+import { hashDocument } from '@/lib/hash';
 import { describe, expect, it } from 'vitest';
 import { loadEnrichmentForRoot } from './result-loader';
 
@@ -337,5 +338,158 @@ describe('loadEnrichmentForRoot', () => {
     });
     expect(result?.calls).toHaveLength(1);
     expect(result?.payloads).toEqual({ hop1: null, byCnpj: {}, byCpf: {} });
+  });
+});
+
+// ── pivotAwareFakeClient ──────────────────────────────────────────────────────
+
+type PivotAwareOpts = FakeOpts & {
+  firstCacheRows?: CacheRowFix[];
+  pivotCacheRows?: CacheRowFix[];
+};
+
+function pivotAwareFakeClient(opts: PivotAwareOpts) {
+  let cacheCallCount = 0;
+  return {
+    from(table: string) {
+      if (table === 'enrichment_jobs') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => ({
+                limit: () => ({
+                  maybeSingle: () => ({
+                    returns<T>() {
+                      return Promise.resolve({
+                        data: (opts.jobRow ?? null) as T | null,
+                        error: opts.jobError ?? null,
+                      });
+                    },
+                  }),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'enrichment_job_calls') {
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => ({
+                returns<T>() {
+                  return Promise.resolve({
+                    data: (opts.callRows ?? []) as T,
+                    error: opts.callsError ?? null,
+                  });
+                },
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'netrin_cache') {
+        cacheCallCount += 1;
+        const currentCall = cacheCallCount;
+        return {
+          select: () => ({
+            in: (_col: string, hashes: string[]) => ({
+              gt: () => ({
+                returns<T>() {
+                  if (currentCall === 1) {
+                    const rows = (opts.firstCacheRows ?? []).filter((r) =>
+                      hashes.includes(r.document_hash),
+                    );
+                    return Promise.resolve({ data: rows as T, error: opts.cacheError ?? null });
+                  }
+                  // currentCall >= 2 → pivot lookup
+                  const rows = (opts.pivotCacheRows ?? []).filter((r) =>
+                    hashes.includes(r.document_hash),
+                  );
+                  return Promise.resolve({ data: rows as T, error: null });
+                },
+              }),
+            }),
+          }),
+        };
+      }
+      throw new Error(`unexpected from(${table})`);
+    },
+    rpc(name: string, args: { ciphertext?: string }) {
+      if (name === 'decrypt_netrin') {
+        const ct = args.ciphertext ?? '';
+        if (opts.decryptFails?.has(ct)) {
+          return Promise.resolve({ data: null, error: { message: 'boom' } });
+        }
+        const plain = ct.replace(/^enc\(/, '').replace(/\)$/, '');
+        return Promise.resolve({ data: plain, error: null });
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    },
+  } as never;
+}
+
+describe('loadEnrichmentForRoot – pivot cache lookup', () => {
+  it('decifra cache de CNPJ pivô do payload raiz mesmo sem call no job', async () => {
+    // Root CPF has 2 related CNPJs in its payload.
+    // Only one of them has a netrin_cache entry (was drilled in another session).
+    const hop1Payload = {
+      empresasRelacionadasCPF: {
+        negociosRelacionados: [
+          {
+            entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+            entidadeRelacionadaDocumento: '11111111000111',
+          },
+          {
+            entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+            entidadeRelacionadaDocumento: '22222222000122',
+          },
+        ],
+      },
+    };
+    const drilledCnpjHash = hashDocument('cnpj', '11111111000111');
+    const cnpj1Payload = { 'esp-cnpj-completo': { razaoSocial: 'DRILLED LTDA' } };
+
+    const client = pivotAwareFakeClient({
+      jobRow: jobFix(),
+      callRows: [
+        {
+          id: 'c1',
+          hop: 1,
+          document_hash: 'cpf:abc',
+          document_type: 'cpf',
+          status: 'success',
+          cached: false,
+          fetched_at: '2026-05-26T00:00:01Z',
+          error: null,
+        },
+      ],
+      firstCacheRows: [
+        {
+          document_hash: 'cpf:abc',
+          document_type: 'cpf',
+          encrypted_payload: `enc(${JSON.stringify(hop1Payload)})`,
+        },
+      ],
+      pivotCacheRows: [
+        {
+          document_hash: drilledCnpjHash,
+          document_type: 'cnpj',
+          encrypted_payload: `enc(${JSON.stringify(cnpj1Payload)})`,
+        },
+      ],
+    });
+
+    const result = await loadEnrichmentForRoot(client, {
+      userId: 'u-1',
+      rootHash: 'cpf:abc',
+      rootType: 'cpf',
+    });
+    expect(result).not.toBeNull();
+    // hop1 payload still decrypted from first cache pass:
+    expect(result?.payloads.hop1).toEqual(hop1Payload);
+    // pivot cache decoded from second cache pass:
+    expect(Object.keys(result?.payloads.byCnpj ?? {})).toContain(drilledCnpjHash);
+    expect(result?.payloads.byCnpj[drilledCnpjHash]).toEqual(cnpj1Payload);
   });
 });

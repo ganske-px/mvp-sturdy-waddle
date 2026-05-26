@@ -6,9 +6,11 @@
 // Designed to be called from a Next.js Server Component (no browser APIs).
 
 import { decryptNetrinText } from '@/lib/crypto/vault.ts';
+import { hashDocument } from '@/lib/hash.ts';
 import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { extractPivotCnpjs } from './parsers/pivot-cnpjs.ts';
+import { extractPivotCpfs } from './parsers/pivot-cpfs.ts';
 import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 // ── Row shapes ──────────────────────────────────────────────────────────────
@@ -234,6 +236,55 @@ export async function loadEnrichmentForRoot(
       }
     }),
   );
+
+  // 7. Pivot lookup: discover hashes of related docs via root payload and
+  //    fill byCnpj/byCpf from netrin_cache rows created by prior drill-downs
+  //    in other sessions (those jobs have no calls in THIS job).
+  const pivotHashes: string[] = [];
+
+  if (input.rootType === 'cpf' && payloads.hop1) {
+    for (const cnpjRaw of extractPivotCnpjs(payloads.hop1)) {
+      const h = hashDocument('cnpj', cnpjRaw);
+      if (!payloads.byCnpj[h]) pivotHashes.push(h);
+    }
+  } else if (input.rootType === 'cnpj') {
+    const rootCnpjPayload = payloads.byCnpj[input.rootHash];
+    if (rootCnpjPayload) {
+      for (const { cpf } of extractPivotCpfs(rootCnpjPayload)) {
+        const h = hashDocument('cpf', cpf);
+        if (!payloads.byCpf[h]) pivotHashes.push(h);
+      }
+    }
+  }
+
+  if (pivotHashes.length > 0) {
+    const { data: pivotRows, error: pivotError } = await admin
+      .from('netrin_cache')
+      .select('document_hash, document_type, encrypted_payload')
+      .in('document_hash', pivotHashes)
+      .gt('expires_at', now)
+      .returns<CacheRow[]>();
+
+    if (pivotError) {
+      console.warn('loadEnrichmentForRoot: pivot cache query failed', pivotError.message);
+    } else {
+      await Promise.all(
+        (pivotRows ?? []).map(async (row) => {
+          try {
+            const plaintext = await decryptNetrinText(admin, row.encrypted_payload);
+            const parsed = JSON.parse(plaintext) as NetrinCompositePayload;
+            if (row.document_type === 'cnpj') {
+              payloads.byCnpj[row.document_hash] = parsed;
+            } else {
+              payloads.byCpf[row.document_hash] = parsed;
+            }
+          } catch (e) {
+            console.warn('pivot decrypt failed', row.document_hash.slice(0, 8), e);
+          }
+        }),
+      );
+    }
+  }
 
   return { job, calls, payloads };
 }
