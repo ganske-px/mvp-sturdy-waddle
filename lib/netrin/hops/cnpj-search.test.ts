@@ -1,10 +1,10 @@
-// lib/netrin/hops/hop2.test.ts
+// lib/netrin/hops/cnpj-search.test.ts
 import { describe, expect, it, vi } from 'vitest';
-import { runHop2 } from './hop2';
+import { runCnpjSearch } from './cnpj-search';
 
-describe('runHop2', () => {
+describe('runCnpjSearch', () => {
   it('extracts CPF socios from cache hit', async () => {
-    const result = await runHop2({
+    const result = await runCnpjSearch({
       cnpjRaw: '12345678000190',
       cnpjHash: 'cnpj:hh',
       userId: 'u1',
@@ -30,7 +30,7 @@ describe('runHop2', () => {
     const fetchSpy = vi.fn(async () => ({
       'pessoas-relacionadas-cnpj': { entidadesRelacionadas: [] },
     }));
-    await runHop2({
+    await runCnpjSearch({
       cnpjRaw: '12345678000190',
       cnpjHash: 'cnpj:hh',
       userId: 'u1',

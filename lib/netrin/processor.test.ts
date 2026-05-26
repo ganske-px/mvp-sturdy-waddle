@@ -26,7 +26,7 @@ describe('processEnrichmentJob', () => {
         pivotCnpjs: ['11111111000111', '22222222000222'],
         cached: false,
       }),
-      runHop2: async (cnpjRaw) => ({
+      runCnpjSearch: async (cnpjRaw) => ({
         payload: {},
         pivotCpfs: [{ cpf: '33333333333', vinculo: 'SOCIO', ativo: true }],
         cached: cnpjRaw === '22222222000222',
@@ -56,7 +56,7 @@ describe('processEnrichmentJob', () => {
       bumpHopDone: async () => {},
       recordCall: async () => {},
       runCpfSearch: async () => ({ payload: {}, pivotCnpjs: ['11111111000111'], cached: false }),
-      runHop2: async () => {
+      runCnpjSearch: async () => {
         throw new Error('boom');
       },
       runHop3: async () => ({ payload: {}, cached: false }),
@@ -76,7 +76,7 @@ describe('processEnrichmentJob', () => {
       runCpfSearch: async () => {
         throw new Error('upstream');
       },
-      runHop2: async () => ({ payload: {}, pivotCpfs: [], cached: false }),
+      runCnpjSearch: async () => ({ payload: {}, pivotCpfs: [], cached: false }),
       runHop3: async () => ({ payload: {}, cached: false }),
       finalize: async () => {},
     });
@@ -97,7 +97,7 @@ describe('processEnrichmentJob', () => {
       runCpfSearch: async () => {
         throw new Error('should not be called');
       },
-      runHop2: async () => ({
+      runCnpjSearch: async () => ({
         payload: {},
         pivotCpfs: [{ cpf: '11111111111', vinculo: 'SOCIO', ativo: true }],
         cached: false,

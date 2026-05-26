@@ -1,6 +1,6 @@
 import { hashDocument } from '@/lib/hash.ts';
 import type { RunCpfSearchResult } from './hops/cpf-search.ts';
-import type { RunHop2Result } from './hops/hop2.ts';
+import type { RunCnpjSearchResult } from './hops/cnpj-search.ts';
 import type { RunHop3Result } from './hops/hop3.ts';
 import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store.ts';
 import type { NetrinCompositePayload } from './types.ts';
@@ -30,7 +30,7 @@ export type ProcessorDeps = {
   bumpHopDone: (jobId: string, hop: 2 | 3) => Promise<void>;
   recordCall: (input: RecordCallInput) => Promise<void>;
   runCpfSearch: () => Promise<RunCpfSearchResult>;
-  runHop2: (cnpjRaw: string) => Promise<RunHop2Result>;
+  runCnpjSearch: (cnpjRaw: string) => Promise<RunCnpjSearchResult>;
   runHop3: (cpfRaw: string) => Promise<RunHop3Result>;
   finalize: (collected: {
     hop1Payload: NetrinCompositePayload | null;
@@ -100,19 +100,19 @@ export async function processEnrichmentJob(
   for (const cnpjRaw of pivotCnpjs) {
     const cnpjHash = hashDocument('cnpj', cnpjRaw);
     try {
-      const hop2 = await deps.runHop2(cnpjRaw);
-      hop2Payloads[cnpjRaw] = hop2.payload;
+      const cnpjSearch = await deps.runCnpjSearch(cnpjRaw);
+      hop2Payloads[cnpjRaw] = cnpjSearch.payload;
       await deps.recordCall({
         jobId,
         hop: 2,
         documentHash: cnpjHash,
         documentType: 'cnpj',
         slugs: [],
-        status: statusFromCache(hop2.cached),
-        cached: hop2.cached,
+        status: statusFromCache(cnpjSearch.cached),
+        cached: cnpjSearch.cached,
       });
       await deps.bumpHopDone(jobId, 2);
-      for (const p of hop2.pivotCpfs) pivotCpfs.push({ cpf: p.cpf });
+      for (const p of cnpjSearch.pivotCpfs) pivotCpfs.push({ cpf: p.cpf });
     } catch (e) {
       anyError = true;
       const message = e instanceof Error ? e.message : String(e);
