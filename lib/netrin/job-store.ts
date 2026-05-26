@@ -76,16 +76,16 @@ export async function setJobStatus(
   if (error) throw new Error(`setJobStatus failed: ${error.message}`);
 }
 
-export async function setHop1Status(
+export async function setNetrinStatus(
   client: SupabaseClient<Database>,
   jobId: string,
-  status: 'success' | 'error' | 'cache_hit' | 'skipped',
+  status: 'success' | 'error' | 'cache_hit',
 ): Promise<void> {
   const { error } = await client
     .from('enrichment_jobs')
     .update({ hop1_status: status } as never)
     .eq('id', jobId);
-  if (error) throw new Error(`setHop1Status failed: ${error.message}`);
+  if (error) throw new Error(`setNetrinStatus failed: ${error.message}`);
 }
 
 export async function setHopTotals(

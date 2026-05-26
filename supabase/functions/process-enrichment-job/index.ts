@@ -6,15 +6,12 @@ import { upsertGraph } from '../../../lib/graph/writer.ts';
 import { getNetrinCache, setNetrinCache } from '../../../lib/netrin/cache.ts';
 import { NetrinClient } from '../../../lib/netrin/client.ts';
 import { buildNetrinGraph } from '../../../lib/netrin/graph-bridge.ts';
-import { runHop1 } from '../../../lib/netrin/hops/hop1.ts';
-import { runHop2 } from '../../../lib/netrin/hops/hop2.ts';
-import { runHop3 } from '../../../lib/netrin/hops/hop3.ts';
+import { runCpfSearch } from '../../../lib/netrin/hops/cpf-search.ts';
+import { runCnpjSearch } from '../../../lib/netrin/hops/cnpj-search.ts';
 import {
-  bumpHopDone,
   recordCall,
-  setHop1Status,
-  setHopTotals,
   setJobStatus,
+  setNetrinStatus,
 } from '../../../lib/netrin/job-store.ts';
 import { processEnrichmentJob } from '../../../lib/netrin/processor.ts';
 
@@ -123,12 +120,10 @@ Deno.serve(async (req: Request) => {
       await processEnrichmentJob(jobIdStr, {
         job: { rootType, rootRaw, rootHash, userId },
         setJobStatus: (id, status, opts) => setJobStatus(admin as never, id, status, opts),
-        setHop1Status: (id, s) => setHop1Status(admin as never, id, s),
-        setHopTotals: (id, t) => setHopTotals(admin as never, id, t),
-        bumpHopDone: (id, hop) => bumpHopDone(admin as never, id, hop),
+        setNetrinStatus: (id, s) => setNetrinStatus(admin as never, id, s),
         recordCall: (input) => recordCall(admin as never, input),
-        runHop1: () =>
-          runHop1({
+        runCpfSearch: () =>
+          runCpfSearch({
             documentRaw: rootRaw,
             documentHash: rootHash,
             userId,
@@ -138,8 +133,8 @@ Deno.serve(async (req: Request) => {
             setCache: setCacheFn,
             fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
           }),
-        runHop2: (cnpjRaw) =>
-          runHop2({
+        runCnpjSearch: (cnpjRaw) =>
+          runCnpjSearch({
             cnpjRaw,
             cnpjHash: hashDocument('cnpj', cnpjRaw),
             userId,
@@ -149,23 +144,12 @@ Deno.serve(async (req: Request) => {
             setCache: setCacheFn,
             fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
           }),
-        runHop3: (cpfRaw) =>
-          runHop3({
-            cpfRaw,
-            cpfHash: hashDocument('cpf', cpfRaw),
-            userId,
-            jobId: jobIdStr,
-            audit: auditFn,
-            getCache: getCacheFn,
-            setCache: setCacheFn,
-            fetchComposta: (type, raw, slugs) => netrin.fetchComposta(type, raw, slugs),
-          }),
-        finalize: async ({ hop1Payload, hop2Payloads, hop3Payloads }) => {
+        finalize: async ({ payload, docType }) => {
+          if (!payload) return;
           const graph = buildNetrinGraph({
             rootDocument: { type: rootType, raw: rootRaw },
-            hop1Payload,
-            hop2Payloads,
-            hop3Payloads,
+            cpfPayload: docType === 'cpf' ? payload : null,
+            cnpjPayloads: docType === 'cnpj' ? { [rootRaw]: payload } : {},
           });
           if (graph.nodes.length > 0) {
             await upsertGraph(admin as never, graph.nodes, graph.edges);

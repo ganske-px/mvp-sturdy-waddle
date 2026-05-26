@@ -3,7 +3,7 @@ import {
   bumpHopDone,
   findOrCreateJob,
   recordCall,
-  setHop1Status,
+  setNetrinStatus,
   setHopTotals,
   setJobStatus,
 } from './job-store';
@@ -209,7 +209,7 @@ describe('setJobStatus', () => {
   });
 });
 
-describe('setHop1Status', () => {
+describe('setNetrinStatus', () => {
   it('updates hop1_status successfully', async () => {
     let updatedPayload: unknown = null;
     const client = {
@@ -227,7 +227,7 @@ describe('setHop1Status', () => {
       },
     } as never;
 
-    await setHop1Status(client, 'j-1', 'success');
+    await setNetrinStatus(client, 'j-1', 'success');
     expect(updatedPayload).toEqual({ hop1_status: 'success' });
   });
 
@@ -245,8 +245,8 @@ describe('setHop1Status', () => {
         };
       },
     } as never;
-    await expect(setHop1Status(client, 'j-1', 'error')).rejects.toThrow(
-      'setHop1Status failed: err',
+    await expect(setNetrinStatus(client, 'j-1', 'error')).rejects.toThrow(
+      'setNetrinStatus failed: err',
     );
   });
 });
