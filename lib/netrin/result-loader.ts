@@ -11,6 +11,7 @@ import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { extractPivotCnpjs } from './parsers/pivot-cnpjs.ts';
 import { extractPivotCpfs } from './parsers/pivot-cpfs.ts';
+import { extractRelatedCpfs } from './parsers/related-cpfs.ts';
 import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 // ── Row shapes ──────────────────────────────────────────────────────────────
@@ -246,6 +247,10 @@ export async function loadEnrichmentForRoot(
     for (const cnpjRaw of extractPivotCnpjs(payloads.hop1)) {
       const h = hashDocument('cnpj', cnpjRaw);
       if (!payloads.byCnpj[h]) pivotHashes.push(h);
+    }
+    for (const { cpf } of extractRelatedCpfs(payloads.hop1)) {
+      const h = hashDocument('cpf', cpf);
+      if (!payloads.byCpf[h]) pivotHashes.push(h);
     }
   } else if (input.rootType === 'cnpj') {
     const rootCnpjPayload = payloads.byCnpj[input.rootHash];

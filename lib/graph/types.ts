@@ -2,7 +2,12 @@ import type { PredictusProcess } from '@/lib/predictus/types.ts';
 
 export type NodeType = 'cpf' | 'cnpj' | 'lawyer';
 
-export type EdgeKind = 'co_party' | 'client_lawyer' | 'lawyer_lawyer' | 'corporate_relation';
+export type EdgeKind =
+  | 'co_party'
+  | 'client_lawyer'
+  | 'lawyer_lawyer'
+  | 'corporate_relation'
+  | 'family_relation';
 
 export type GraphNodeLabel = {
   name?: string;
@@ -30,6 +35,12 @@ export type CorporateEdgeEvidence = {
   source: 'empresas-relacionadas-cpf' | 'pessoas-relacionadas-cnpj';
 };
 
+export type FamilyEdgeEvidence = {
+  tipoRelacionamento: string;
+  nivel?: string;
+  source: 'pessoas-relacionadas-cpf';
+};
+
 export type ExtractedEdge =
   | {
       sourceHash: string;
@@ -42,6 +53,12 @@ export type ExtractedEdge =
       targetHash: string;
       kind: 'corporate_relation';
       evidence: CorporateEdgeEvidence;
+    }
+  | {
+      sourceHash: string;
+      targetHash: string;
+      kind: 'family_relation';
+      evidence: FamilyEdgeEvidence;
     };
 
 // The extractor emits one ExtractedEdge per process observation. The writer
@@ -55,7 +72,8 @@ export type ExtractedGraph = {
 
 export type StoredEdgeEvidence =
   | { processNumbers: string[]; samePolo: boolean | null; occurrences: number }
-  | CorporateEdgeEvidence;
+  | CorporateEdgeEvidence
+  | FamilyEdgeEvidence;
 
 export type ExtractGraphInput = {
   payload: PredictusProcess[];

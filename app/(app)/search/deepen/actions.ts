@@ -2,6 +2,7 @@
 
 import { extractRequestContext } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
+import { resolveRelatedCpf } from '@/lib/netrin/resolve-related';
 import { resolveSocioCpf } from '@/lib/netrin/resolve-socio';
 import { runCnpjSearch, runCpfSearch } from '@/lib/predictus/run-search';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -12,7 +13,8 @@ import { redirect } from 'next/navigation';
 
 export type DeepenInput =
   | { docType: 'cnpj'; cnpjRaw: string; currentPath?: string }
-  | { docType: 'cpf-socio'; cpfHash: string; parentCnpjHash: string; currentPath?: string };
+  | { docType: 'cpf-socio'; cpfHash: string; parentCnpjHash: string; currentPath?: string }
+  | { docType: 'cpf-relacionado'; cpfHash: string; parentCpfHash: string; currentPath?: string };
 
 export type DeepenResult = { ok: false; error: string };
 
@@ -42,16 +44,25 @@ export async function deepenDocument(input: DeepenInput): Promise<DeepenResult> 
     redirect(buildResultUrl(result.documentHash, input.currentPath));
   }
 
-  // cpf-socio path
+  // cpf drill-down paths (sócio de CNPJ ou pessoa relacionada de CPF)
   await requirePermission('search_person');
-  const rawCpf = await resolveSocioCpf(admin, {
-    parentCnpjHash: input.parentCnpjHash,
-    cpfHash: input.cpfHash,
-  });
+  const rawCpf =
+    input.docType === 'cpf-socio'
+      ? await resolveSocioCpf(admin, {
+          parentCnpjHash: input.parentCnpjHash,
+          cpfHash: input.cpfHash,
+        })
+      : await resolveRelatedCpf(admin, {
+          parentCpfHash: input.parentCpfHash,
+          cpfHash: input.cpfHash,
+        });
   if (!rawCpf) {
     return {
       ok: false,
-      error: 'Não foi possível resolver o sócio. Refaça a consulta da empresa.',
+      error:
+        input.docType === 'cpf-socio'
+          ? 'Não foi possível resolver o sócio. Refaça a consulta da empresa.'
+          : 'Não foi possível resolver a pessoa relacionada. Refaça a consulta.',
     };
   }
   const result = await runCpfSearch(rawCpf, {

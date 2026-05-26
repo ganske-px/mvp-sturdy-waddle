@@ -57,7 +57,7 @@ export async function upsertGraph(
   const nodes_in = await encryptNodesBatched(client, nodes);
 
   const edges_in = edges.map((e) => {
-    if (e.kind === 'corporate_relation') {
+    if (e.kind === 'corporate_relation' || e.kind === 'family_relation') {
       return {
         source_hash: e.sourceHash,
         target_hash: e.targetHash,

@@ -4,10 +4,11 @@ import { IdentityCardCnpj } from '@/components/antifraude/identity-card-cnpj';
 import { MediaCard } from '@/components/antifraude/media-card';
 import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
+import { RelatedPeople } from '@/components/antifraude/related-people';
 import { SancoesCardCnpj } from '@/components/antifraude/sancoes-card-cnpj';
 import { SearchRowRealtime } from '@/components/antifraude/search-row-realtime';
 import { type SocioEntry, SociosCard } from '@/components/antifraude/socios-card';
-import type { RelatedCompanyEntry } from '@/components/antifraude/types';
+import type { RelatedCompanyEntry, RelatedPersonEntry } from '@/components/antifraude/types';
 import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
 import { NetworkCta } from '@/components/network-cta';
 import { ProcessResultsTable } from '@/components/process-results-table';
@@ -15,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 import { hashDocument } from '@/lib/hash';
+import { extractRelatedCpfs } from '@/lib/netrin/parsers/related-cpfs';
 import { loadEnrichmentForRoot } from '@/lib/netrin/result-loader';
 import type { NetrinCompositePayload } from '@/lib/netrin/types';
 import { getCachedResults } from '@/lib/predictus/cache';
@@ -256,6 +258,28 @@ function buildRelatedCompanies(
   }, []);
 }
 
+function buildRelatedPeople(
+  hop1: NetrinCompositePayload,
+  cachedCpfHashes: Set<string>,
+): RelatedPersonEntry[] {
+  return extractRelatedCpfs(hop1).reduce<RelatedPersonEntry[]>((acc, person) => {
+    let cpfHash: string;
+    try {
+      cpfHash = hashDocument('cpf', person.cpf);
+    } catch {
+      return acc;
+    }
+    acc.push({
+      cpfHash,
+      maskedPreview: maskCpf(person.cpf),
+      nome: person.nome,
+      tipoRelacionamento: person.tipoRelacionamento,
+      hasCached: cachedCpfHashes.has(cpfHash),
+    });
+    return acc;
+  }, []);
+}
+
 // ── CNPJ-root extraction helpers ─────────────────────────────────────────────
 
 type EspCnpjCompleto = {
@@ -420,6 +444,7 @@ export default async function ResultPage({
 
   // CNPJ-root branch: payload is byCnpj[documentHash] instead of hop1
   const cachedCpfHashes = new Set(Object.keys(byCpf));
+  const relatedPeople = hop1 ? buildRelatedPeople(hop1, cachedCpfHashes) : [];
   const cnpjRootPayload = searchRow.search_type === 'cnpj' ? (byCnpj[documentHash] ?? null) : null;
 
   const cnpjIdentityProps = cnpjRootPayload ? extractCnpjIdentity(cnpjRootPayload) : null;
@@ -581,6 +606,12 @@ export default async function ResultPage({
                 status={cardStatus}
                 items={relatedItems}
                 currentPath={currentPath || documentHash}
+              />
+              <RelatedPeople
+                status={cardStatus}
+                parentCpfHash={documentHash}
+                currentPath={currentPath || documentHash}
+                people={relatedPeople}
               />
             </>
           ) : (

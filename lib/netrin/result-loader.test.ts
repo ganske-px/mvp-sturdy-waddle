@@ -493,6 +493,69 @@ describe('loadEnrichmentForRoot – pivot cache lookup', () => {
     expect(result?.payloads.byCnpj[drilledCnpjHash]).toEqual(cnpj1Payload);
   });
 
+  it('decifra cache de CPF relacionado (família) do payload raiz CPF mesmo sem call no job', async () => {
+    // Root CPF has a related person (pessoasRelacionadasCPF) drilled in another
+    // session — cache exists but no call in this job.
+    const hop1Payload = {
+      pessoasRelacionadasCPF: {
+        entidadesRelacionadas: [
+          {
+            entidadeRelacionadaDocumento: '02264486732',
+            entidadeRelacionadadaTipoDeDocumento: 'CPF',
+            tipoDeRelacionamento: 'MOTHER',
+          },
+          {
+            entidadeRelacionadaDocumento: '06917562793',
+            entidadeRelacionadadaTipoDeDocumento: 'CPF',
+            tipoDeRelacionamento: 'GRANDPARENT',
+          },
+        ],
+      },
+    };
+    const drilledCpfHash = hashDocument('cpf', '02264486732');
+    const motherPayload = { 'pep-kyc-cpf': { currentlyPEP: 'N' } };
+
+    const client = pivotAwareFakeClient({
+      jobRow: jobFix(),
+      callRows: [
+        {
+          id: 'c1',
+          hop: 1,
+          document_hash: 'cpf:abc',
+          document_type: 'cpf',
+          status: 'success',
+          cached: false,
+          fetched_at: '2026-05-26T00:00:01Z',
+          error: null,
+        },
+      ],
+      firstCacheRows: [
+        {
+          document_hash: 'cpf:abc',
+          document_type: 'cpf',
+          encrypted_payload: `enc(${JSON.stringify(hop1Payload)})`,
+        },
+      ],
+      pivotCacheRows: [
+        {
+          document_hash: drilledCpfHash,
+          document_type: 'cpf',
+          encrypted_payload: `enc(${JSON.stringify(motherPayload)})`,
+        },
+      ],
+    });
+
+    const result = await loadEnrichmentForRoot(client, {
+      userId: 'u-1',
+      rootHash: 'cpf:abc',
+      rootType: 'cpf',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.payloads.hop1).toEqual(hop1Payload);
+    expect(result?.payloads.byCpf[drilledCpfHash]).toEqual(motherPayload);
+  });
+
   it('decifra cache de CPF sócio do payload raiz CNPJ mesmo sem call no job', async () => {
     // Root CNPJ has 2 sócios in its pessoas-relacionadas-cnpj payload.
     // One of them was drilled in another session — cache exists but no call in this job.

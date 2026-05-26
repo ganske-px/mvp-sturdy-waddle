@@ -53,3 +53,11 @@ export type RelatedCompaniesProps = {
   items: RelatedCompanyEntry[];
   currentPath?: string;
 };
+
+export type RelatedPersonEntry = {
+  cpfHash: string;
+  maskedPreview: string;
+  nome?: string;
+  tipoRelacionamento?: string;
+  hasCached: boolean;
+};

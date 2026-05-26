@@ -5,6 +5,7 @@ export type NetrinDocumentType = 'cpf' | 'cnpj';
 export const CPF_SLUGS = [
   'pep-kyc-cpf',
   'empresas-relacionadas-cpf',
+  'pessoas-relacionadas-cpf',
   'receita-federal-cpf-data-nascimento',
   'midias-consolidado',
 ] as const;

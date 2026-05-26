@@ -36,6 +36,14 @@ type Entidade = {
   percentualParticipacaoSociedade?: unknown;
 };
 
+type RelatedEntity = {
+  entidadeRelacionadaDocumento?: unknown;
+  entidadeRelacionadadaTipoDeDocumento?: unknown;
+  entidadeRelacionadaNome?: unknown;
+  tipoDeRelacionamento?: unknown;
+  nivelDeRelacionamento?: unknown;
+};
+
 function makeCpfNode(cpfRaw: string, name?: string): ExtractedNode {
   return {
     nodeHash: hashDocument('cpf', cpfRaw),
@@ -130,6 +138,49 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
           evidence: corporateEvidenceFromNegocio(item, 'empresas-relacionadas-cpf'),
         });
       }
+    }
+  }
+
+  // CPF root → pessoas relacionadas (família)
+  if (
+    input.cpfPayload &&
+    input.rootDocument.type === 'cpf' &&
+    input.rootDocument.raw.length === 11
+  ) {
+    const rootHash = hashDocument('cpf', input.rootDocument.raw);
+    const slug = (input.cpfPayload as Record<string, unknown>).pessoasRelacionadasCPF as
+      | { entidadesRelacionadas?: unknown }
+      | null
+      | undefined;
+    const list = Array.isArray(slug?.entidadesRelacionadas)
+      ? (slug?.entidadesRelacionadas as RelatedEntity[])
+      : [];
+    for (const item of list) {
+      if (item.entidadeRelacionadadaTipoDeDocumento !== 'CPF') continue;
+      const cpfRaw =
+        typeof item.entidadeRelacionadaDocumento === 'string'
+          ? item.entidadeRelacionadaDocumento.replace(/\D/g, '')
+          : '';
+      if (cpfRaw.length !== 11) continue;
+      const node = makeCpfNode(
+        cpfRaw,
+        typeof item.entidadeRelacionadaNome === 'string' ? item.entidadeRelacionadaNome : undefined,
+      );
+      nodeMap.set(node.nodeHash, node);
+      edges.push({
+        sourceHash: rootHash,
+        targetHash: node.nodeHash,
+        kind: 'family_relation',
+        evidence: {
+          tipoRelacionamento:
+            typeof item.tipoDeRelacionamento === 'string'
+              ? item.tipoDeRelacionamento
+              : 'INDEFINIDO',
+          nivel:
+            typeof item.nivelDeRelacionamento === 'string' ? item.nivelDeRelacionamento : undefined,
+          source: 'pessoas-relacionadas-cpf',
+        },
+      });
     }
   }
 

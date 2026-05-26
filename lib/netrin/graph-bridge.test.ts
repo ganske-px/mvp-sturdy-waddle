@@ -85,6 +85,60 @@ describe('buildNetrinGraph', () => {
     expect(cnpjNodes).toHaveLength(1);
   });
 
+  it('emits family edges from CPF root → related people (pessoasRelacionadasCPF)', () => {
+    const result = buildNetrinGraph({
+      rootDocument: { type: 'cpf', raw: '15574451760', name: 'FULANO' },
+      cpfPayload: {
+        pessoasRelacionadasCPF: {
+          entidadesRelacionadas: [
+            {
+              entidadeRelacionadaDocumento: '022.644.867-32',
+              entidadeRelacionadadaTipoDeDocumento: 'CPF',
+              entidadeRelacionadaNome: 'LUCELI CANDIDA DE MELO',
+              tipoDeRelacionamento: 'MOTHER',
+              nivelDeRelacionamento: 'DIRECT',
+            },
+          ],
+        },
+      } as never,
+      cnpjPayloads: {},
+    });
+
+    const motherNode = result.nodes.find((n) => n.label.document === '02264486732');
+    expect(motherNode?.nodeType).toBe('cpf');
+
+    const family = result.edges.filter((e) => e.kind === 'family_relation');
+    expect(family).toHaveLength(1);
+    expect(family[0]?.sourceHash).toBe(
+      result.nodes.find((n) => n.label.document === '15574451760')?.nodeHash,
+    );
+    expect(family[0]?.targetHash).toBe(motherNode?.nodeHash);
+    expect(family[0]?.evidence).toMatchObject({
+      tipoRelacionamento: 'MOTHER',
+      nivel: 'DIRECT',
+      source: 'pessoas-relacionadas-cpf',
+    });
+  });
+
+  it('does not emit family edges for non-CPF entities or when root is not a CPF', () => {
+    const cpfRootCnpjEntity = buildNetrinGraph({
+      rootDocument: { type: 'cpf', raw: '15574451760' },
+      cpfPayload: {
+        pessoasRelacionadasCPF: {
+          entidadesRelacionadas: [
+            {
+              entidadeRelacionadaDocumento: '12345678000190',
+              entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+              entidadeRelacionadaNome: 'ACME LTDA',
+            },
+          ],
+        },
+      } as never,
+      cnpjPayloads: {},
+    });
+    expect(cpfRootCnpjEntity.edges.filter((e) => e.kind === 'family_relation')).toHaveLength(0);
+  });
+
   it('CNPJ root: emits sócios from cnpjPayloads even without cpfPayload', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cnpj', raw: '12345678000190', name: 'ACME' },

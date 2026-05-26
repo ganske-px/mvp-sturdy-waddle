@@ -6,7 +6,9 @@ import type { ExtractedEdge, ProcessEdgeEvidence } from './types';
 
 /** Narrow an ExtractedEdge to the process-evidence branch. */
 function processEvidence(e: ExtractedEdge): ProcessEdgeEvidence {
-  if (e.kind === 'corporate_relation') throw new Error('unexpected corporate_relation in test');
+  if (e.kind === 'corporate_relation' || e.kind === 'family_relation') {
+    throw new Error(`unexpected ${e.kind} in test`);
+  }
   return e.evidence;
 }
 
