@@ -43,3 +43,19 @@ begin
   end if;
 end
 $$;
+
+-- netrin_cache_key — mirrors migration 20260526100000_netrin_cache_key.sql
+do $netrin_cache_key$
+begin
+  if not exists (select 1 from vault.secrets where name = 'netrin_cache_key') then
+    perform vault.create_secret(
+      encode(extensions.gen_random_bytes(32), 'base64'),
+      'netrin_cache_key',
+      'Encryption key for netrin_cache.encrypted_payload'
+    );
+    raise notice 'netrin_cache_key created.';
+  else
+    raise notice 'netrin_cache_key already exists, skipping.';
+  end if;
+end
+$netrin_cache_key$;
