@@ -1,9 +1,13 @@
 import { EnrichmentRealtime } from '@/components/antifraude/enrichment-realtime';
 import { IdentityCard } from '@/components/antifraude/identity-card';
+import { IdentityCardCnpj } from '@/components/antifraude/identity-card-cnpj';
 import { MediaCard } from '@/components/antifraude/media-card';
 import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
+import { SancoesCardCnpj } from '@/components/antifraude/sancoes-card-cnpj';
+import { SociosCard, type SocioEntry } from '@/components/antifraude/socios-card';
 import type { RelatedCompanyEntry } from '@/components/antifraude/types';
+import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
 import { NetworkCta } from '@/components/network-cta';
 import { ProcessResultsTable } from '@/components/process-results-table';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +19,7 @@ import type { NetrinCompositePayload } from '@/lib/netrin/types';
 import { getCachedResults } from '@/lib/predictus/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { mask as maskCpf } from '@/lib/validators/cpf';
 import { AlertCircleIcon, ClockIcon, SearchIcon } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
@@ -249,6 +254,110 @@ function buildRelatedCompanies(
   }, []);
 }
 
+// ── CNPJ-root extraction helpers ─────────────────────────────────────────────
+
+type EspCnpjCompleto = {
+  razaoSocial?: unknown;
+  nomeFantasia?: unknown;
+  situacaoCadastral?: unknown;
+  capitalSocial?: unknown;
+  atividadeEconomica?: unknown;
+  dataAbertura?: unknown;
+};
+
+function extractCnpjIdentity(p: NetrinCompositePayload) {
+  const slug = (p as Record<string, unknown>)['esp-cnpj-completo'] as
+    | EspCnpjCompleto
+    | null
+    | undefined;
+  return {
+    razaoSocial: typeof slug?.razaoSocial === 'string' ? slug.razaoSocial : undefined,
+    nomeFantasia: typeof slug?.nomeFantasia === 'string' ? slug.nomeFantasia : undefined,
+    situacaoCadastral:
+      typeof slug?.situacaoCadastral === 'string' ? slug.situacaoCadastral : undefined,
+    capitalSocial: typeof slug?.capitalSocial === 'number' ? slug.capitalSocial : undefined,
+    atividadePrincipal:
+      typeof slug?.atividadeEconomica === 'string' ? slug.atividadeEconomica : undefined,
+    dataAbertura: typeof slug?.dataAbertura === 'string' ? slug.dataAbertura : undefined,
+  };
+}
+
+type PepKycCnpj = { sancionado?: unknown };
+type CeisItem = { ativo?: unknown; descricaoSancao?: unknown };
+type CnepItem = { ativo?: unknown; descricaoSancao?: unknown };
+type TrabalhoEscravoSlug = { empregador?: unknown[] };
+
+function extractCnpjSancoes(p: NetrinCompositePayload) {
+  const pep = (p as Record<string, unknown>)['pep-kyc-cnpj'] as PepKycCnpj | null | undefined;
+  const ceisList = (p as Record<string, unknown>)['portal-transparencia-ceis'] as
+    | { sancoes?: CeisItem[] }
+    | null
+    | undefined;
+  const cnepList = (p as Record<string, unknown>)['portal-transparencia-cnep'] as
+    | { sancoes?: CnepItem[] }
+    | null
+    | undefined;
+  const trabSlug = (p as Record<string, unknown>)['trabalho-escravo'] as
+    | TrabalhoEscravoSlug
+    | null
+    | undefined;
+  return {
+    sancionado: pep?.sancionado === true || pep?.sancionado === 'S',
+    ceis: (ceisList?.sancoes ?? []).map((c) => ({
+      ativo: c.ativo === true,
+      descricao: typeof c.descricaoSancao === 'string' ? c.descricaoSancao : undefined,
+    })),
+    cnep: (cnepList?.sancoes ?? []).map((c) => ({
+      ativo: c.ativo === true,
+      descricao: typeof c.descricaoSancao === 'string' ? c.descricaoSancao : undefined,
+    })),
+    trabalhoEscravo: Array.isArray(trabSlug?.empregador) && trabSlug.empregador.length > 0,
+  };
+}
+
+type PessoasRelCnpjEntity = {
+  cpf?: unknown;
+  nome?: unknown;
+  vinculoDoRelacionamento?: unknown;
+  percentualParticipacaoSociedade?: unknown;
+};
+
+function extractSocios(
+  p: NetrinCompositePayload,
+  cachedCpfHashes: Set<string>,
+): SocioEntry[] {
+  const slug = (p as Record<string, unknown>)['pessoas-relacionadas-cnpj'] as
+    | { entidadesRelacionadas?: PessoasRelCnpjEntity[] }
+    | null
+    | undefined;
+  const list = Array.isArray(slug?.entidadesRelacionadas) ? slug.entidadesRelacionadas : [];
+  return list.reduce<SocioEntry[]>((acc, item) => {
+    const cpfRaw = typeof item.cpf === 'string' ? item.cpf.replace(/\D/g, '') : '';
+    if (cpfRaw.length !== 11) return acc;
+    let cpfHash: string;
+    try {
+      cpfHash = hashDocument('cpf', cpfRaw);
+    } catch {
+      return acc;
+    }
+    acc.push({
+      cpfHash,
+      maskedPreview: maskCpf(cpfRaw),
+      nome: typeof item.nome === 'string' ? item.nome : undefined,
+      vinculo:
+        typeof item.vinculoDoRelacionamento === 'string'
+          ? item.vinculoDoRelacionamento
+          : undefined,
+      percentual:
+        typeof item.percentualParticipacaoSociedade === 'number'
+          ? item.percentualParticipacaoSociedade
+          : undefined,
+      hasCached: cachedCpfHashes.has(cpfHash),
+    });
+    return acc;
+  }, []);
+}
+
 export default async function ResultPage({
   params,
   searchParams,
@@ -304,6 +413,7 @@ export default async function ResultPage({
   // Derive antifraude card props from hop1 payload
   const hop1 = enrichment?.payloads.hop1 ?? null;
   const byCnpj = enrichment?.payloads.byCnpj ?? {};
+  const byCpf = enrichment?.payloads.byCpf ?? {};
   const job = enrichment?.job ?? null;
 
   const identityProps = hop1 ? extractIdentityFromHop1(hop1) : null;
@@ -311,13 +421,24 @@ export default async function ResultPage({
   const mediaProps = hop1 ? extractMediaFromHop1(hop1) : null;
   const relatedItems = hop1 ? buildRelatedCompanies(hop1, byCnpj) : [];
 
+  // CNPJ-root branch: payload is byCnpj[documentHash] instead of hop1
+  const cachedCpfHashes = new Set(Object.keys(byCpf));
+  const cnpjRootPayload = searchRow.search_type === 'cnpj' ? (byCnpj[documentHash] ?? null) : null;
+
+  const cnpjIdentityProps = cnpjRootPayload ? extractCnpjIdentity(cnpjRootPayload) : null;
+  const cnpjSancoesProps = cnpjRootPayload ? extractCnpjSancoes(cnpjRootPayload) : null;
+  const cnpjMediaProps = cnpjRootPayload ? extractMediaFromHop1(cnpjRootPayload) : null;
+  const socios = cnpjRootPayload ? extractSocios(cnpjRootPayload, cachedCpfHashes) : [];
+
   // Status for cards: if job exists but is still running, show skeleton state
   const jobRunning = job?.status === 'pending' || job?.status === 'running';
+  // For CNPJ root, use cnpjRootPayload as the data presence indicator instead of hop1
+  const hasData = searchRow.search_type === 'cnpj' ? !!cnpjRootPayload : !!hop1;
   const cardStatus = !job
     ? ('missing' as const)
     : jobRunning
       ? ('running' as const)
-      : hop1
+      : hasData
         ? ('success' as const)
         : job.status === 'failed'
           ? ('error' as const)
@@ -333,6 +454,8 @@ export default async function ResultPage({
           {searchRow.term_preview}
         </h1>
       </header>
+
+      <BreadcrumbNetwork pathParam={currentPath} currentHash={documentHash} />
 
       <Card>
         <CardHeader>
@@ -415,44 +538,81 @@ export default async function ResultPage({
                         ? 'Em andamento'
                         : 'Pendente'}
               </Badge>
-              {job.hop2Total > 0 ? (
-                <Badge variant="outline">
-                  {job.hop2Done}/{job.hop2Total} empresas
-                </Badge>
-              ) : null}
             </div>
           </div>
 
           <EnrichmentRealtime jobId={job.id} />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <IdentityCard
-              status={cardStatus}
-              nome={identityProps?.nome}
-              dataNascimento={identityProps?.dataNascimento}
-              situacaoCadastral={identityProps?.situacaoCadastral}
-              nomeMae={identityProps?.nomeMae}
-              idade={identityProps?.idade}
-              genero={identityProps?.genero}
-            />
-            <PepCard
-              status={cardStatus}
-              currentlyPEP={pepProps?.currentlyPEP}
-              currentlySanctioned={pepProps?.currentlySanctioned}
-              previouslySanctioned={pepProps?.previouslySanctioned}
-              historicoCount={pepProps?.historicoCount}
-            />
-            <MediaCard
-              status={cardStatus}
-              mencoes={mediaProps?.mencoes}
-              qtdMidias={mediaProps?.qtdMidias}
-              qtdListas={mediaProps?.qtdListas}
-              qtdGov={mediaProps?.qtdGov}
-              qtdAmb={mediaProps?.qtdAmb}
-            />
-          </div>
-
-          <RelatedCompanies status={cardStatus} items={relatedItems} currentPath={currentPath} />
+          {searchRow.search_type === 'cpf' ? (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <IdentityCard
+                  status={cardStatus}
+                  nome={identityProps?.nome}
+                  dataNascimento={identityProps?.dataNascimento}
+                  situacaoCadastral={identityProps?.situacaoCadastral}
+                  nomeMae={identityProps?.nomeMae}
+                  idade={identityProps?.idade}
+                  genero={identityProps?.genero}
+                />
+                <PepCard
+                  status={cardStatus}
+                  currentlyPEP={pepProps?.currentlyPEP}
+                  currentlySanctioned={pepProps?.currentlySanctioned}
+                  previouslySanctioned={pepProps?.previouslySanctioned}
+                  historicoCount={pepProps?.historicoCount}
+                />
+                <MediaCard
+                  status={cardStatus}
+                  mencoes={mediaProps?.mencoes}
+                  qtdMidias={mediaProps?.qtdMidias}
+                  qtdListas={mediaProps?.qtdListas}
+                  qtdGov={mediaProps?.qtdGov}
+                  qtdAmb={mediaProps?.qtdAmb}
+                />
+              </div>
+              <RelatedCompanies
+                status={cardStatus}
+                items={relatedItems}
+                currentPath={currentPath ?? documentHash}
+              />
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <IdentityCardCnpj
+                  status={cardStatus}
+                  razaoSocial={cnpjIdentityProps?.razaoSocial}
+                  nomeFantasia={cnpjIdentityProps?.nomeFantasia}
+                  situacaoCadastral={cnpjIdentityProps?.situacaoCadastral}
+                  capitalSocial={cnpjIdentityProps?.capitalSocial}
+                  atividadePrincipal={cnpjIdentityProps?.atividadePrincipal}
+                  dataAbertura={cnpjIdentityProps?.dataAbertura}
+                />
+                <SancoesCardCnpj
+                  status={cardStatus}
+                  sancionado={cnpjSancoesProps?.sancionado}
+                  ceis={cnpjSancoesProps?.ceis}
+                  cnep={cnpjSancoesProps?.cnep}
+                  trabalhoEscravo={cnpjSancoesProps?.trabalhoEscravo}
+                />
+                <MediaCard
+                  status={cardStatus}
+                  mencoes={cnpjMediaProps?.mencoes}
+                  qtdMidias={cnpjMediaProps?.qtdMidias}
+                  qtdListas={cnpjMediaProps?.qtdListas}
+                  qtdGov={cnpjMediaProps?.qtdGov}
+                  qtdAmb={cnpjMediaProps?.qtdAmb}
+                />
+              </div>
+              <SociosCard
+                status={cardStatus}
+                parentCnpjHash={documentHash}
+                currentPath={currentPath ?? documentHash}
+                socios={socios}
+              />
+            </>
+          )}
         </section>
       ) : null}
     </main>
