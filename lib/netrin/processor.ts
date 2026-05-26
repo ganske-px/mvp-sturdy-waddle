@@ -1,7 +1,5 @@
-import { hashDocument } from '@/lib/hash.ts';
 import type { RunCpfSearchResult } from './hops/cpf-search.ts';
 import type { RunCnpjSearchResult } from './hops/cnpj-search.ts';
-import type { RunHop3Result } from './hops/hop3.ts';
 import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store.ts';
 import type { NetrinCompositePayload } from './types.ts';
 
@@ -19,27 +17,20 @@ export type ProcessorDeps = {
     status: EnrichmentJobStatus,
     opts?: { error?: string; finished?: boolean },
   ) => Promise<void>;
-  setHop1Status: (
+  setNetrinStatus: (
     jobId: string,
-    status: 'success' | 'error' | 'cache_hit' | 'skipped',
+    status: 'success' | 'error' | 'cache_hit',
   ) => Promise<void>;
-  setHopTotals: (
-    jobId: string,
-    totals: { hop2_total?: number; hop3_total?: number },
-  ) => Promise<void>;
-  bumpHopDone: (jobId: string, hop: 2 | 3) => Promise<void>;
   recordCall: (input: RecordCallInput) => Promise<void>;
   runCpfSearch: () => Promise<RunCpfSearchResult>;
   runCnpjSearch: (cnpjRaw: string) => Promise<RunCnpjSearchResult>;
-  runHop3: (cpfRaw: string) => Promise<RunHop3Result>;
   finalize: (collected: {
-    hop1Payload: NetrinCompositePayload | null;
-    hop2Payloads: Record<string, NetrinCompositePayload>;
-    hop3Payloads: Record<string, NetrinCompositePayload>;
+    payload: NetrinCompositePayload | null;
+    docType: 'cpf' | 'cnpj';
   }) => Promise<void>;
 };
 
-export type ProcessorResult = { status: 'completed' | 'partial' | 'failed' };
+export type ProcessorResult = { status: 'completed' | 'failed' };
 
 function statusFromCache(cached: boolean): EnrichmentCallStatus {
   return cached ? 'cache_hit' : 'success';
@@ -49,132 +40,51 @@ export async function processEnrichmentJob(
   jobId: string,
   deps: ProcessorDeps,
 ): Promise<ProcessorResult> {
-  let anyError = false;
-  let hop1Payload: NetrinCompositePayload | null = null;
-  const hop2Payloads: Record<string, NetrinCompositePayload> = {};
-  const hop3Payloads: Record<string, NetrinCompositePayload> = {};
-
   await deps.setJobStatus(jobId, 'running');
 
-  let pivotCnpjs: string[] = [];
-  if (deps.job.rootType === 'cpf') {
-    try {
-      const cpfSearch = await deps.runCpfSearch();
-      hop1Payload = cpfSearch.payload;
-      pivotCnpjs = cpfSearch.pivotCnpjs;
-      await deps.recordCall({
-        jobId,
-        hop: 1,
-        documentHash: deps.job.rootHash,
-        documentType: 'cpf',
-        slugs: [],
-        status: statusFromCache(cpfSearch.cached),
-        cached: cpfSearch.cached,
-      });
-      await deps.setHop1Status(jobId, cpfSearch.cached ? 'cache_hit' : 'success');
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      await deps.recordCall({
-        jobId,
-        hop: 1,
-        documentHash: deps.job.rootHash,
-        documentType: 'cpf',
-        slugs: [],
-        status: 'error',
-        cached: false,
-        error: message,
-      });
-      await deps.setHop1Status(jobId, 'error');
-      await deps.setJobStatus(jobId, 'failed', { error: message, finished: true });
-      return { status: 'failed' };
-    }
-  } else {
-    pivotCnpjs = [deps.job.rootRaw];
-    await deps.setHop1Status(jobId, 'skipped');
-  }
+  let payload: NetrinCompositePayload | null = null;
+  const docType = deps.job.rootType;
+  const hopNumber: 1 | 2 = docType === 'cpf' ? 1 : 2;
 
-  await deps.setHopTotals(jobId, { hop2_total: pivotCnpjs.length });
-
-  const pivotCpfs: { cpf: string }[] = [];
-
-  for (const cnpjRaw of pivotCnpjs) {
-    const cnpjHash = hashDocument('cnpj', cnpjRaw);
-    try {
-      const cnpjSearch = await deps.runCnpjSearch(cnpjRaw);
-      hop2Payloads[cnpjRaw] = cnpjSearch.payload;
-      await deps.recordCall({
-        jobId,
-        hop: 2,
-        documentHash: cnpjHash,
-        documentType: 'cnpj',
-        slugs: [],
-        status: statusFromCache(cnpjSearch.cached),
-        cached: cnpjSearch.cached,
-      });
-      await deps.bumpHopDone(jobId, 2);
-      for (const p of cnpjSearch.pivotCpfs) pivotCpfs.push({ cpf: p.cpf });
-    } catch (e) {
-      anyError = true;
-      const message = e instanceof Error ? e.message : String(e);
-      await deps.recordCall({
-        jobId,
-        hop: 2,
-        documentHash: cnpjHash,
-        documentType: 'cnpj',
-        slugs: [],
-        status: 'error',
-        cached: false,
-        error: message,
-      });
-      await deps.bumpHopDone(jobId, 2);
-    }
-  }
-
-  const uniqueCpfs = Array.from(new Set(pivotCpfs.map((p) => p.cpf))).filter(
-    (c) => !(deps.job.rootType === 'cpf' && c === deps.job.rootRaw),
-  );
-  await deps.setHopTotals(jobId, { hop3_total: uniqueCpfs.length });
-
-  for (const cpfRaw of uniqueCpfs) {
-    const cpfHash = hashDocument('cpf', cpfRaw);
-    try {
-      const hop3 = await deps.runHop3(cpfRaw);
-      hop3Payloads[cpfRaw] = hop3.payload;
-      await deps.recordCall({
-        jobId,
-        hop: 3,
-        documentHash: cpfHash,
-        documentType: 'cpf',
-        slugs: [],
-        status: statusFromCache(hop3.cached),
-        cached: hop3.cached,
-      });
-      await deps.bumpHopDone(jobId, 3);
-    } catch (e) {
-      anyError = true;
-      const message = e instanceof Error ? e.message : String(e);
-      await deps.recordCall({
-        jobId,
-        hop: 3,
-        documentHash: cpfHash,
-        documentType: 'cpf',
-        slugs: [],
-        status: 'error',
-        cached: false,
-        error: message,
-      });
-      await deps.bumpHopDone(jobId, 3);
-    }
+  try {
+    const result =
+      docType === 'cpf'
+        ? await deps.runCpfSearch()
+        : await deps.runCnpjSearch(deps.job.rootRaw);
+    payload = result.payload;
+    await deps.recordCall({
+      jobId,
+      hop: hopNumber,
+      documentHash: deps.job.rootHash,
+      documentType: docType,
+      slugs: [],
+      status: statusFromCache(result.cached),
+      cached: result.cached,
+    });
+    await deps.setNetrinStatus(jobId, result.cached ? 'cache_hit' : 'success');
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    await deps.recordCall({
+      jobId,
+      hop: hopNumber,
+      documentHash: deps.job.rootHash,
+      documentType: docType,
+      slugs: [],
+      status: 'error',
+      cached: false,
+      error: message,
+    });
+    await deps.setNetrinStatus(jobId, 'error');
+    await deps.setJobStatus(jobId, 'failed', { error: message, finished: true });
+    return { status: 'failed' };
   }
 
   try {
-    await deps.finalize({ hop1Payload, hop2Payloads, hop3Payloads });
+    await deps.finalize({ payload, docType });
   } catch (e) {
-    anyError = true;
     console.warn('finalize failed:', e);
   }
 
-  const finalStatus: EnrichmentJobStatus = anyError ? 'partial' : 'completed';
-  await deps.setJobStatus(jobId, finalStatus, { finished: true });
-  return { status: finalStatus };
+  await deps.setJobStatus(jobId, 'completed', { finished: true });
+  return { status: 'completed' };
 }
