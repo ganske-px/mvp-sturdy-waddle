@@ -5,6 +5,7 @@ import { MediaCard } from '@/components/antifraude/media-card';
 import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
 import { SancoesCardCnpj } from '@/components/antifraude/sancoes-card-cnpj';
+import { SearchRowRealtime } from '@/components/antifraude/search-row-realtime';
 import { type SocioEntry, SociosCard } from '@/components/antifraude/socios-card';
 import type { RelatedCompanyEntry } from '@/components/antifraude/types';
 import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
@@ -20,7 +21,7 @@ import { getCachedResults } from '@/lib/predictus/cache';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { mask as maskCpf } from '@/lib/validators/cpf';
-import { AlertCircleIcon, ClockIcon, SearchIcon } from 'lucide-react';
+import { AlertCircleIcon, ClockIcon, Loader2Icon, SearchIcon } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 export const metadata = {
@@ -49,6 +50,7 @@ type SearchRow = {
   created_at: string;
   result_count: number;
   error_message: string | null;
+  status: 'pending' | 'completed' | 'failed';
 };
 
 // ── Payload extraction helpers ────────────────────────────────────────────────
@@ -368,7 +370,7 @@ export default async function ResultPage({
   const supabase = await createClient();
   const { data: searchRow } = await supabase
     .from('searches')
-    .select('search_type, term_preview, created_at, result_count, error_message')
+    .select('search_type, term_preview, created_at, result_count, error_message, status')
     .eq('document_hash', documentHash)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -441,6 +443,7 @@ export default async function ResultPage({
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
+      <SearchRowRealtime documentHash={documentHash} />
       <header className="flex flex-col gap-2">
         <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
           Consulta arquivada
@@ -483,6 +486,14 @@ export default async function ResultPage({
             >
               <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
               <span>{searchRow.error_message}</span>
+            </div>
+          ) : searchRow.status === 'pending' ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">
+              <Loader2Icon className="size-8 animate-spin text-muted-foreground/60" />
+              <p className="text-sm font-medium">Consultando processos…</p>
+              <p className="text-xs text-muted-foreground">
+                A consulta está em andamento. Esta tela atualiza automaticamente.
+              </p>
             </div>
           ) : !cached ? (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-muted/30 py-10">

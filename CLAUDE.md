@@ -4,7 +4,7 @@ Project context for Claude Code working on this repository. The README is for hu
 
 ## What this is
 
-Internal background check app for PX Center. Operators authenticate, then query the Predictus API by CPF, CNPJ or name — individually (single search) or via CSV upload (bulk). Every single CPF/CNPJ search also fires a fire-and-forget enrichment job to Netrin `consulta-composta` (3-hop antifraude). Results are cached, audited, and rate-limited.
+Internal background check app for PX Center. Operators authenticate, then query the Predictus API by CPF, CNPJ or name — individually (single search) or via CSV upload (bulk). A busca single por CPF/CNPJ não chama Predictus síncrono: ela insere uma row pending em `searches` e dispara, em paralelo, um job de enrichment a Netrin `consulta-composta` (3-hop antifraude) — ambas as fontes rodam async via Edge Functions acionadas por trigger pg_net. Results are cached, audited, and rate-limited.
 
 Originally a Streamlit + Python MVP, now a Supabase + Next.js + Vercel rewrite. Python code is preserved under `legacy-streamlit/` for reference only — **never** import from it.
 
@@ -85,6 +85,7 @@ supabase/
   ├── migrations/    SQL — schema, RLS, crypto helpers, pg_cron jobs
   ├── functions/
   │   ├── process-bulk-job/         Edge Function (Deno) — bulk CSV worker
+  │   ├── process-predictus-job/    Edge Function (Deno) — Predictus async worker
   │   └── process-enrichment-job/   Edge Function (Deno) — Netrin Hops 1+2+3 worker
   └── config.toml    Local Supabase config (signup disabled, 12-char passwords)
 scripts/
@@ -110,7 +111,7 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - `predictus_cache.encrypted_payload` and `bulk_job_items.document_encrypted` are `bytea` columns encrypted via Vault key `predictus_cache_key` (RPCs `encrypt_payload` / `decrypt_payload`, helpers `encryptText` / `decryptText` em `lib/crypto/vault.ts`).
 - `netrin_cache.encrypted_payload` é `bytea` encriptado via uma chave **separada** `netrin_cache_key` (defesa em profundidade — vazamento de uma chave não compromete a outra). RPCs `encrypt_netrin` / `decrypt_netrin`, helpers `encryptNetrinText` / `decryptNetrinText`.
 - `graph_nodes.encrypted_label` é `bytea` encriptado via uma terceira chave `graph_label_key`, através de `encrypt_graph_label`/`decrypt_graph_label` em `lib/graph/label-crypto.ts`. O label JSON (`{name?, document?, oab?}`) só é plaintext no servidor dentro de Server Actions — nunca em `audit_log` ou retornado ao cliente. `graph_nodes.masked_preview` é a renderização LGPD-safe para fallback client-side.
-- Plaintext CPF/CNPJ pode viver em **dois lugares**: (1) stack frame de `processBulkItem` durante a chamada Predictus, (2) stack frame do Edge Function `process-enrichment-job` durante chamadas Netrin (incluindo CPFs sócios descobertos em Hop 2). Em ambos os casos: não persistir, não logar, não retornar.
+- Plaintext CPF/CNPJ pode viver em **três lugares**: (1) stack frame de `processBulkItem` durante a chamada Predictus, (2) stack frame do Edge Function `process-enrichment-job` durante chamadas Netrin (incluindo CPFs sócios descobertos em Hop 2), (3) stack frame do Edge Function `process-predictus-job` durante a chamada Predictus async. Em todos os casos: não persistir, não logar, não retornar.
 - `NETRIN_TOKEN` é secret server-only: nunca em log, audit, error message ou resposta de Server Action/cliente. Lido apenas em `lib/netrin/server-client.ts` e na Edge Function.
 - Retention: 30 days for `searches`, `audit_log`, `predictus_cache`, `netrin_cache`, `enrichment_jobs` (incluindo `enrichment_job_calls` via cascade); 7 days for completed/failed `bulk_jobs` (because they hold encrypted documents). All purged daily by pg_cron jobs em `20260520180300_retention_cron.sql` e `20260526100400_enrichment_retention.sql`. Jobs órfãos (`pending`/`running` > 15 min) são marcados como `failed` a cada 5 min. **`graph_nodes`/`graph_edges` are not purged** — o grafo é intencionalmente append-only e compartilhado entre operadores.
 
@@ -119,7 +120,7 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - Signup is disabled (`supabase/config.toml`). Operators are created manually via Supabase Studio → Auth → Add user. A Postgres trigger mirrors them into `public.users`.
 - `proxy.ts` enforces both: (1) authenticated session and (2) row in `public.users`. Removing a row from `public.users` revokes access without touching `auth.users`.
 - Tables are RLS-protected:
-  - `searches`, `bulk_jobs`, `audit_log` — operator reads/writes own rows.
+  - `searches`, `bulk_jobs`, `audit_log` — operator reads/writes own rows. `searches` está em `supabase_realtime` publication para que a página de resultado assine UPDATEs da Predictus async (mudança de `status` pending→completed/failed).
   - `bulk_job_items` — visible only when the parent job belongs to the operator.
   - `predictus_cache`, `netrin_cache` — any authenticated operator can read; **writes via service-role only**.
   - `graph_nodes`, `graph_edges` — any authenticated operator can read; **writes via service-role only** (via `upsert_graph` RPC).
@@ -143,6 +144,7 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - Never `new PredictusClient(...)` directly inside `app/` or `supabase/functions/`. Use `createServerPredictusClient()` from `lib/predictus/server-client.ts`. It wires the `SupabaseTokenStore` so the access token survives cold starts.
 - The client retries 5xx and network errors with exponential backoff (1s, 2s, 4s, then throws). It refreshes on 401 exactly once.
 - Predictus credentials are shared (one upstream account for all operators). Never expose them client-side.
+- A busca single (CPF/CNPJ) NÃO chama Predictus síncrono no Server Action. O fluxo é: `runCpfSearch`/`runCnpjSearch` em `lib/predictus/run-search.ts` cifra o documento via `encryptText` (predictus_cache_key), INSERT-a uma row em `searches` com `status='pending'` e `document_encrypted` populado, e em **paralelo** chama `findOrCreateJob` para o enrichment Netrin. O trigger AFTER INSERT em `searches` chama via `pg_net.http_post` a Edge Function `process-predictus-job` que faz a chamada Predictus de fato, grava `predictus_cache`, e UPDATE-a `searches.status='completed'` (ou `failed`). Cache hit continua síncrono (insere status='completed' direto, sem `document_encrypted`, e o trigger é no-op). Dedup de re-submit: índice parcial unique em `(user_id, document_hash) WHERE status='pending'` + fallback 23505 em `findOrCreatePendingSearch`.
 
 ### Netrin client
 
@@ -154,7 +156,7 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 
 ### Enrichment orchestration
 
-- Toda busca por CPF (`searchPerson`) ou CNPJ (`searchByCnpj`) chama `findOrCreateJob` passando `documentEncrypted` (CPF/CNPJ cifrado via `encryptText` / `predictus_cache_key`). Re-pesquisar o mesmo documento enquanto há job ativo reusa o job (índice parcial único em `enrichment_jobs.root_hash WHERE status IN ('pending','running')`). **Não há fetch fire-and-forget** — o trigger AFTER INSERT em `enrichment_jobs` chama o Edge Function via `pg_net.http_post` lendo URL e token de `vault.decrypted_secrets` (`enrichment_dispatch_url`, `enrichment_dispatch_token`).
+- Toda busca por CPF (`searchPerson`) ou CNPJ (`searchByCnpj`) dispara, em **paralelo com a Predictus async**, uma chamada a `findOrCreateJob` passando `documentEncrypted` (CPF/CNPJ cifrado via `encryptText` / `predictus_cache_key`). As duas fontes começam juntas — nunca encadeadas. Re-pesquisar o mesmo documento enquanto há job ativo reusa o job (índice parcial único em `enrichment_jobs.root_hash WHERE status IN ('pending','running')`). O trigger AFTER INSERT em `enrichment_jobs` chama o Edge Function via `pg_net.http_post` lendo URL e token de `vault.decrypted_secrets` (`enrichment_dispatch_url`, `enrichment_dispatch_token`).
 - O Edge Function recebe só `{ jobId }`, lê a row de `enrichment_jobs` (com `document_encrypted`), decifra via `decryptText` e usa o plaintext como `rootRaw`. Plaintext nunca persiste fora do stack frame.
 - O Edge Function chama `processEnrichmentJob` com `runHop1` / `runHop2` / `runHop3` injetados — todos compartilhados de `lib/netrin/hops/`. Erro em Hop 1 = `failed`; erro em Hop 2/3 isolado por item = `partial`. Crash do Edge ou trigger falhando (vault sem segredos, pg_net off) = órfão → `failed` em até 15 min via pg_cron.
 - Após todos os hops, `buildNetrinGraph(...)` produz `ExtractedGraph` (nodes cpf/cnpj, edges `corporate_relation`) e `upsertGraph` persiste no grafo compartilhado.
@@ -183,7 +185,8 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 auth.users  ◄── (trigger: on_auth_user_created) ──►  public.users  (allowlist)
                                                           │
                                                           ▼ (RLS by user_id)
-                                       searches             ◄── single search history
+                                       searches             ◄── single search history; status pending/completed/failed
+                                                              ◄── status=pending + document_encrypted dispara process-predictus-job via pg_net
                                        bulk_jobs             ◄── async batch metadata
                                             │
                                             ▼ (RLS via parent)
@@ -217,12 +220,9 @@ The full SQL lives under `supabase/migrations/`. Treat migrations as append-only
 ### Add a new Server Action that calls Predictus
 
 1. Write `app/<route>/actions.ts` with `'use server'`.
-2. Authenticate: `const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser();`
-3. Audit BEFORE the external call: `await writeAuditLog({ userId, action, ... }, admin, { allowFailure: true });`
-4. Cache lookup first if applicable (see `searchByDoc` in `app/search/actions.ts`).
-5. `const client = await createServerPredictusClient();` — never `new PredictusClient(...)`.
-6. Cache write best-effort, surrounded by try/catch with `console.warn`.
-7. `redirect(...)` at the end if the user navigates somewhere.
+2. Authenticate + permission check: `const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); await requirePermission('search_person' | 'search_company');`
+3. Call `runCpfSearch` ou `runCnpjSearch` em `lib/predictus/run-search.ts` — essa função faz audit, cache lookup, e dispara Predictus + Netrin em paralelo via INSERTs (com triggers pg_net). NÃO chame `createServerPredictusClient()` direto; a chamada Predictus síncrona só existe dentro do Edge Function `process-predictus-job`.
+4. `redirect(`/search/result/${encodeURIComponent(result.documentHash)}`)` no fim — a página renderiza skeleton enquanto status='pending' e atualiza via realtime.
 
 ### Add a Vitest module
 
@@ -244,14 +244,15 @@ The full SQL lives under `supabase/migrations/`. Treat migrations as append-only
 2. `pnpm exec supabase start` (Docker required for local)
 3. `cp .env.local.example .env.local` and fill from `supabase status`
 4. `psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" -f scripts/bootstrap-vault.sql`
-5. Popular os segredos de dispatch (env-específicos) via `scripts/bootstrap-dispatch-secrets.sql`:
+5. Popular os segredos de dispatch (env-específicos) via `scripts/bootstrap-dispatch-secrets.sql`. Esse script popula 4 segredos no Vault: `enrichment_dispatch_url`/`enrichment_dispatch_token` (Netrin) e `predictus_dispatch_url`/`predictus_dispatch_token` (Predictus async). O token é o mesmo (service-role) — mantemos dois nomes por simetria de nomenclatura e para rotação independente futura.
    ```bash
    psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" \
-     -v dispatch_url="'http://host.docker.internal:54321/functions/v1/process-enrichment-job'" \
+     -v enrichment_url="'http://host.docker.internal:54321/functions/v1/process-enrichment-job'" \
+     -v predictus_url="'http://host.docker.internal:54321/functions/v1/process-predictus-job'" \
      -v dispatch_token="'<SUPABASE_SECRET_KEY local>'" \
      -f scripts/bootstrap-dispatch-secrets.sql
    ```
-   No prod, rode o mesmo script pelo Studio SQL editor substituindo `:dispatch_url` (`https://<project>.supabase.co/functions/v1/process-enrichment-job`) e `:dispatch_token` (service-role key). É idempotente — re-rodar atualiza o valor. Se algum segredo estiver ausente o trigger emite warning e o sweep de órfãos (15min) marca o job como failed.
+   No prod, rode o mesmo script pelo Studio SQL editor substituindo `:enrichment_url`/`:predictus_url` (URLs hosted) e `:dispatch_token` (service-role key). É idempotente. Se algum segredo estiver ausente o trigger pg_net correspondente emite warning e o sweep de órfãos (15min) marca a row como failed.
 6. Create an operator via Studio (Auth → Add user)
 7. Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` e `NETRIN_TOKEN` in `.env.local`
 8. `pnpm dev`
@@ -291,6 +292,7 @@ Depois, o admin cria os demais operadores via `/admin/users/new`.
 - **Never** put `NETRIN_TOKEN` em log, audit, error message, ou qualquer resposta que chegue ao cliente. O token é server-only.
 - **Never** import from `legacy-streamlit/`.
 - **Never** `new PredictusClient(...)` ou `new NetrinClient(...)` inside `app/` or `supabase/functions/`. Use `createServerPredictusClient()` / `createServerNetrinClient()`.
+- **Never** chamar Predictus síncrono num Server Action. O Server Action insere a row em `searches` com `status='pending'` + `document_encrypted` e deixa a Edge Function `process-predictus-job` fazer o fetch. O único lugar que chama Predictus é a Edge Function ou o bulk worker (que também é Edge Function).
 - **Never** call `supabase.auth.signInWithPassword` outside `app/login/actions.ts`. Sign-in is centralized.
 - **Never** add a Server Action that mutates audit/cache state without going through `lib/audit.ts`, `lib/predictus/cache.ts` ou `lib/netrin/cache.ts`. Re-deriving the snake_case mapping by hand creates drift.
 - **Never** compor slugs Netrin ad-hoc — use sempre os arrays const `HOP1_SLUGS` / `HOP2_SLUGS` / `HOP3_SLUGS` de `lib/netrin/types.ts`.
@@ -323,6 +325,7 @@ pnpm exec supabase db reset  # destroys and re-applies all migrations
 pnpm exec supabase db push   # apply pending migrations to the linked project
 pnpm exec supabase functions deploy process-bulk-job
 pnpm exec supabase functions deploy process-enrichment-job
+pnpm exec supabase functions deploy process-predictus-job
 pnpm exec supabase secrets set NETRIN_BASE_URL=https://api.netrin.com.br NETRIN_TOKEN=<token> NETRIN_PEP_ACURACIA=95
 ```
 

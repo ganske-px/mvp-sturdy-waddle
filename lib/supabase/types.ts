@@ -39,6 +39,8 @@ export type Database = {
           term_preview: string;
           result_count: number;
           error_message: string | null;
+          status: 'pending' | 'completed' | 'failed';
+          document_encrypted: string | null;
           created_at: string;
         };
         Insert: {
@@ -49,6 +51,8 @@ export type Database = {
           term_preview: string;
           result_count?: number;
           error_message?: string | null;
+          status?: 'pending' | 'completed' | 'failed';
+          document_encrypted?: string | null;
           created_at?: string;
         };
         Update: {
@@ -59,6 +63,8 @@ export type Database = {
           term_preview?: string;
           result_count?: number;
           error_message?: string | null;
+          status?: 'pending' | 'completed' | 'failed';
+          document_encrypted?: string | null;
           created_at?: string;
         };
       };

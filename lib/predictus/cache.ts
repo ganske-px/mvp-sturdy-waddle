@@ -1,8 +1,10 @@
-import { decryptText, encryptText } from '@/lib/crypto/vault.ts';
-import { extractGraph } from '@/lib/graph/extractor.ts';
-import { upsertGraph } from '@/lib/graph/writer.ts';
 import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
+// Relative (not @/) so the Supabase edge bundler can follow these value
+// imports — its dependency walker does not apply the deno.json import map.
+import { decryptText, encryptText } from '../crypto/vault.ts';
+import { extractGraph } from '../graph/extractor.ts';
+import { upsertGraph } from '../graph/writer.ts';
 import type { PredictusProcess, PredictusSearchType } from './types.ts';
 
 export const CACHE_TTL_DAYS = 30;

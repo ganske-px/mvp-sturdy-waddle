@@ -1,6 +1,8 @@
-import { hashDocument } from '@/lib/hash.ts';
-import { mask as maskCnpj } from '@/lib/validators/cnpj.ts';
-import { mask as maskCpf } from '@/lib/validators/cpf.ts';
+// Relative (not @/) so the Supabase edge bundler can follow these value
+// imports — its dependency walker does not apply the deno.json import map.
+import { hashDocument } from '../hash.ts';
+import { mask as maskCnpj } from '../validators/cnpj.ts';
+import { mask as maskCpf } from '../validators/cpf.ts';
 import type {
   ExtractGraphInput,
   ExtractedEdge,

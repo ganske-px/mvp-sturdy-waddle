@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-export function EnrichmentRealtime({ jobId }: { jobId: string }) {
+export function SearchRowRealtime({ documentHash }: { documentHash: string }) {
   const router = useRouter();
   useEffect(() => {
     const supabase = createClient();
@@ -12,7 +12,7 @@ export function EnrichmentRealtime({ jobId }: { jobId: string }) {
     let cancelled = false;
 
     void (async () => {
-      // postgres_changes on RLS-protected tables only delivers events when the
+      // postgres_changes on an RLS-protected table only delivers events when the
       // realtime socket carries the user's JWT. The SSR browser client does not
       // forward the cookie session to the socket on its own, so set it here —
       // otherwise the socket is anon and RLS filters every event out.
@@ -23,25 +23,20 @@ export function EnrichmentRealtime({ jobId }: { jobId: string }) {
       if (session?.access_token) await supabase.realtime.setAuth(session.access_token);
 
       channel = supabase
-        .channel(`enrichment:${jobId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'enrichment_jobs', filter: `id=eq.${jobId}` },
-          () => router.refresh(),
-        )
+        .channel(`searches:${documentHash}`)
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table: 'enrichment_job_calls',
-            filter: `job_id=eq.${jobId}`,
+            table: 'searches',
+            filter: `document_hash=eq.${documentHash}`,
           },
           () => router.refresh(),
         )
         .subscribe((status) => {
           if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.warn(`realtime enrichment:${jobId} status: ${status}`);
+            console.warn(`realtime searches:${documentHash} status: ${status}`);
           }
         });
     })();
@@ -50,6 +45,6 @@ export function EnrichmentRealtime({ jobId }: { jobId: string }) {
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [jobId, router]);
+  }, [documentHash, router]);
   return null;
 }

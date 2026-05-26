@@ -80,6 +80,7 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
       document_hash: documentHash,
       term_preview: termPreview,
       result_count: cached.results.length,
+      status: 'completed',
     } as never);
     redirect(`/search/result/${encodeURIComponent(documentHash)}`);
   }
@@ -97,6 +98,7 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
       term_preview: termPreview,
       result_count: 0,
       error_message: message,
+      status: 'failed',
     } as never);
     return { ok: false, error: message };
   }
@@ -113,6 +115,7 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
     document_hash: documentHash,
     term_preview: termPreview,
     result_count: results.length,
+    status: 'completed',
   } as never);
 
   redirect(`/search/result/${encodeURIComponent(documentHash)}`);

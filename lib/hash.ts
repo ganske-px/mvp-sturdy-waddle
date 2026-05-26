@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
-import { normalize as normalizeCnpj } from '@/lib/validators/cnpj.ts';
-import { normalize as normalizeCpf } from '@/lib/validators/cpf.ts';
+// Relative (not @/) so the Supabase edge bundler can follow these value
+// imports — its dependency walker does not apply the deno.json import map.
+import { normalize as normalizeCnpj } from './validators/cnpj.ts';
+import { normalize as normalizeCpf } from './validators/cpf.ts';
 
 export type HashDocumentType = 'cpf' | 'cnpj' | 'name' | 'lawyer';
 
