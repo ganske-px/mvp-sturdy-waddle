@@ -6,20 +6,19 @@ describe('buildNetrinGraph', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909', name: 'JOAO' },
       cpfPayload: {
-        'pep-kyc-cpf': { nome: 'JOAO' },
-        'empresas-relacionadas-cpf': {
+        empresasRelacionadasCPF: {
           negociosRelacionados: [
             {
-              cnpj: '12345678000190',
-              razaoSocial: 'ACME LTDA',
-              tipoVinculo: 'OWNERSHIP',
+              entidadeRelacionadaDocumento: '12345678000190',
+              entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+              entidadeRelacionadaNome: 'ACME LTDA',
+              tipoDeRelacionamento: 'OWNERSHIP',
               dataInicioRelacionamento: '2020-01-01',
               dataFimRelacionamento: '9999-12-31',
-              percentualParticipacao: 100,
             },
           ],
         },
-      },
+      } as never,
       cnpjPayloads: {},
     });
 
@@ -32,7 +31,6 @@ describe('buildNetrinGraph', () => {
     expect(corp[0]?.evidence).toMatchObject({
       vinculo: 'OWNERSHIP',
       source: 'empresas-relacionadas-cpf',
-      percentualParticipacao: 100,
     });
   });
 
@@ -40,10 +38,16 @@ describe('buildNetrinGraph', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909', name: 'JOAO' },
       cpfPayload: {
-        'empresas-relacionadas-cpf': {
-          negociosRelacionados: [{ cnpj: '12345678000190', razaoSocial: 'ACME' }],
+        empresasRelacionadasCPF: {
+          negociosRelacionados: [
+            {
+              entidadeRelacionadaDocumento: '12345678000190',
+              entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+              entidadeRelacionadaNome: 'ACME',
+            },
+          ],
         },
-      },
+      } as never,
       cnpjPayloads: {
         '12345678000190': {
           'esp-cnpj-completo': { razaoSocial: 'ACME' },
@@ -75,10 +79,19 @@ describe('buildNetrinGraph', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909' },
       cpfPayload: {
-        'empresas-relacionadas-cpf': {
-          negociosRelacionados: [{ cnpj: 'invalid' }, { cnpj: '12345678000190' }],
+        empresasRelacionadasCPF: {
+          negociosRelacionados: [
+            {
+              entidadeRelacionadaDocumento: 'invalid',
+              entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+            },
+            {
+              entidadeRelacionadaDocumento: '12345678000190',
+              entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+            },
+          ],
         },
-      },
+      } as never,
       cnpjPayloads: {},
     });
     const cnpjNodes = result.nodes.filter((n) => n.nodeType === 'cnpj');

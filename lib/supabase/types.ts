@@ -315,7 +315,12 @@ export type Database = {
           id: string;
           source_hash: string;
           target_hash: string;
-          kind: 'co_party' | 'client_lawyer' | 'lawyer_lawyer';
+          kind:
+            | 'co_party'
+            | 'client_lawyer'
+            | 'lawyer_lawyer'
+            | 'corporate_relation'
+            | 'family_relation';
           evidence: Record<string, unknown>;
           first_seen_at: string;
           last_seen_at: string;
@@ -324,7 +329,12 @@ export type Database = {
           id?: string;
           source_hash: string;
           target_hash: string;
-          kind: 'co_party' | 'client_lawyer' | 'lawyer_lawyer';
+          kind?:
+            | 'co_party'
+            | 'client_lawyer'
+            | 'lawyer_lawyer'
+            | 'corporate_relation'
+            | 'family_relation';
           evidence?: Record<string, unknown>;
           first_seen_at?: string;
           last_seen_at?: string;
@@ -333,7 +343,12 @@ export type Database = {
           id?: string;
           source_hash?: string;
           target_hash?: string;
-          kind?: 'co_party' | 'client_lawyer' | 'lawyer_lawyer';
+          kind?:
+            | 'co_party'
+            | 'client_lawyer'
+            | 'lawyer_lawyer'
+            | 'corporate_relation'
+            | 'family_relation';
           evidence?: Record<string, unknown>;
           first_seen_at?: string;
           last_seen_at?: string;

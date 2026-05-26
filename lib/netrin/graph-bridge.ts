@@ -7,6 +7,7 @@ import type {
 import { hashDocument } from '@/lib/hash.ts';
 import { mask as maskCnpj } from '@/lib/validators/cnpj.ts';
 import { mask as maskCpf } from '@/lib/validators/cpf.ts';
+import { extractRelatedCompanies } from './parsers/related-companies.ts';
 import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 export type GraphBridgeInput = {
@@ -15,16 +16,6 @@ export type GraphBridgeInput = {
   cpfPayload?: NetrinCompositePayload | null;
   /** Payloads from CNPJ searches. Key = raw CNPJ string (14 digits). */
   cnpjPayloads?: Record<string, NetrinCompositePayload>;
-};
-
-type Negocio = {
-  cnpj?: unknown;
-  razaoSocial?: unknown;
-  tipoVinculo?: unknown;
-  vinculoDoRelacionamento?: unknown;
-  dataInicioRelacionamento?: unknown;
-  dataFimRelacionamento?: unknown;
-  percentualParticipacao?: unknown;
 };
 
 type Entidade = {
@@ -62,28 +53,6 @@ function makeCnpjNode(cnpjRaw: string, name?: string): ExtractedNode {
   };
 }
 
-function corporateEvidenceFromNegocio(
-  n: Negocio,
-  source: CorporateEdgeEvidence['source'],
-): CorporateEdgeEvidence {
-  const vinculo =
-    typeof n.tipoVinculo === 'string'
-      ? n.tipoVinculo
-      : typeof n.vinculoDoRelacionamento === 'string'
-        ? n.vinculoDoRelacionamento
-        : 'INDEFINIDO';
-  return {
-    vinculo,
-    percentualParticipacao:
-      typeof n.percentualParticipacao === 'number' ? n.percentualParticipacao : undefined,
-    dataInicioRelacionamento:
-      typeof n.dataInicioRelacionamento === 'string' ? n.dataInicioRelacionamento : undefined,
-    dataFimRelacionamento:
-      typeof n.dataFimRelacionamento === 'string' ? n.dataFimRelacionamento : undefined,
-    source,
-  };
-}
-
 function corporateEvidenceFromEntidade(e: Entidade): CorporateEdgeEvidence {
   return {
     vinculo:
@@ -115,27 +84,20 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
 
   // CPF root → relaciona CNPJs de empresas
   if (input.cpfPayload) {
-    const slug = input.cpfPayload['empresas-relacionadas-cpf'] as
-      | { negociosRelacionados?: unknown }
-      | null
-      | undefined;
-    const list = Array.isArray(slug?.negociosRelacionados)
-      ? (slug?.negociosRelacionados as Negocio[])
-      : [];
-    for (const item of list) {
-      const cnpjRaw = typeof item.cnpj === 'string' ? item.cnpj.replace(/\D/g, '') : '';
-      if (cnpjRaw.length !== 14) continue;
-      const node = makeCnpjNode(
-        cnpjRaw,
-        typeof item.razaoSocial === 'string' ? item.razaoSocial : undefined,
-      );
+    for (const empresa of extractRelatedCompanies(input.cpfPayload)) {
+      const node = makeCnpjNode(empresa.cnpj, empresa.razaoSocial);
       nodeMap.set(node.nodeHash, node);
       if (input.rootDocument.type === 'cpf') {
         edges.push({
           sourceHash: hashDocument('cpf', input.rootDocument.raw),
           targetHash: node.nodeHash,
           kind: 'corporate_relation',
-          evidence: corporateEvidenceFromNegocio(item, 'empresas-relacionadas-cpf'),
+          evidence: {
+            vinculo: empresa.vinculo,
+            dataInicioRelacionamento: empresa.dataInicio,
+            dataFimRelacionamento: empresa.dataFim,
+            source: 'empresas-relacionadas-cpf',
+          },
         });
       }
     }
