@@ -167,7 +167,8 @@ type EdgeStyleKind =
   | 'co_party_opposed'
   | 'co_party_unknown'
   | 'client_lawyer'
-  | 'lawyer_lawyer';
+  | 'lawyer_lawyer'
+  | 'corporate_relation';
 
 const EDGE_STYLES: Record<
   EdgeStyleKind,
@@ -176,14 +177,15 @@ const EDGE_STYLES: Record<
   co_party_same: { stroke: '#22c55e', label: 'Mesmo polo' },
   co_party_opposed: { stroke: '#ef4444', label: 'Polos opostos' },
   co_party_unknown: { stroke: '#71717a', label: 'Co-parte (polo n/d)' },
-  client_lawyer: { stroke: '#3b82f6', strokeDasharray: '6 4', label: 'Representação' },
-  lawyer_lawyer: { stroke: '#a855f7', strokeDasharray: '2 4', label: 'Advogado ↔ advogado' },
+  client_lawyer: { stroke: '#0ea5e9', strokeDasharray: '6 4', label: 'Representação' },
+  lawyer_lawyer: { stroke: '#7c3aed', strokeDasharray: '2 4', label: 'Advogado ↔ advogado' },
+  corporate_relation: { stroke: '#1d4ed8', strokeDasharray: '4 3', label: 'Vínculo societário' },
 };
 
 function classifyEdge(edge: GraphEdgeDto): EdgeStyleKind {
   if (edge.kind === 'client_lawyer') return 'client_lawyer';
   if (edge.kind === 'lawyer_lawyer') return 'lawyer_lawyer';
-  if (edge.kind === 'corporate_relation') return 'co_party_unknown';
+  if (edge.kind === 'corporate_relation') return 'corporate_relation';
   if (isProcessEvidence(edge.evidence) && edge.evidence.samePolo === true) return 'co_party_same';
   if (isProcessEvidence(edge.evidence) && edge.evidence.samePolo === false)
     return 'co_party_opposed';
@@ -340,6 +342,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [hoveredHash, setHoveredHash] = useState<string | null>(null);
   const [pathStart, setPathStart] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set());
+  const [hiddenEdgeKinds, setHiddenEdgeKinds] = useState<Set<EdgeStyleKind>>(new Set());
   const [minOccurrences, setMinOccurrences] = useState(1);
 
   // React Flow warns when nodeTypes is a new reference each render; with HMR
@@ -355,6 +358,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   // the value the user settles on (or an intermediate one as CPU frees up).
   const deferredMinOccurrences = useDeferredValue(minOccurrences);
   const deferredHiddenTypes = useDeferredValue(hiddenTypes);
+  const deferredHiddenEdgeKinds = useDeferredValue(hiddenEdgeKinds);
 
   const maxOccurrences = useMemo(() => {
     let max = 1;
@@ -390,10 +394,11 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         (e) =>
           candidateHashes.has(e.source) &&
           candidateHashes.has(e.target) &&
+          !deferredHiddenEdgeKinds.has(classifyEdge(e)) &&
           (isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1) >=
             deferredMinOccurrences,
       ),
-    [subgraph.edges, candidateHashes, deferredMinOccurrences],
+    [subgraph.edges, candidateHashes, deferredHiddenEdgeKinds, deferredMinOccurrences],
   );
 
   const connectedHashes = useMemo(() => {
@@ -561,6 +566,15 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     });
   }
 
+  function toggleEdgeKind(k: EdgeStyleKind) {
+    setHiddenEdgeKinds((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
+
   if (!subgraph.center) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
@@ -603,6 +617,24 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
               </button>
             );
           })}
+          <span className="mx-1 text-border">|</span>
+          <span className="text-muted-foreground">Relações</span>
+          <button
+            type="button"
+            onClick={() => toggleEdgeKind('corporate_relation')}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors ${
+              hiddenEdgeKinds.has('corporate_relation')
+                ? 'border-border bg-transparent text-muted-foreground line-through'
+                : 'border-foreground/20 bg-foreground/5 text-foreground'
+            }`}
+          >
+            <span
+              aria-hidden
+              className="inline-block h-[2px] w-4 rounded"
+              style={{ backgroundColor: EDGE_STYLES.corporate_relation.stroke }}
+            />
+            Societário
+          </button>
           <span className="ml-auto text-muted-foreground">
             {hubSet.size > 0 ? `${hubSet.size} hubs destacados` : null}
           </span>

@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ShortestPath } from '@/lib/graph/path';
-import type { StoredEdgeEvidence } from '@/lib/graph/types';
+import type { CorporateEdgeEvidence, StoredEdgeEvidence } from '@/lib/graph/types';
 import { ArrowRight, Eye, Layers, MapPin, Route, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -13,6 +13,10 @@ function isProcessEvidence(
   ev: StoredEdgeEvidence,
 ): ev is Extract<StoredEdgeEvidence, { occurrences: number }> {
   return 'occurrences' in ev;
+}
+
+function isCorporateEvidence(ev: StoredEdgeEvidence): ev is CorporateEdgeEvidence {
+  return 'vinculo' in ev;
 }
 import { ExpandButton } from './expand-button';
 
@@ -90,17 +94,35 @@ function VisaoTab({
                       ? 'Co-parte'
                       : e.kind === 'client_lawyer'
                         ? 'Representação'
-                        : 'Advogado ↔ advogado'}
+                        : e.kind === 'lawyer_lawyer'
+                          ? 'Advogado ↔ advogado'
+                          : 'Vínculo societário'}
                   </span>
-                  <span className="font-mono tabular-nums text-muted-foreground">
-                    {isProcessEvidence(e.evidence) ? e.evidence.occurrences : null} proc.
-                  </span>
+                  {isProcessEvidence(e.evidence) ? (
+                    <span className="font-mono tabular-nums text-muted-foreground">
+                      {e.evidence.occurrences} proc.
+                    </span>
+                  ) : null}
                 </div>
                 {isProcessEvidence(e.evidence) && e.evidence.samePolo === true ? (
                   <span className="text-[0.65rem] text-emerald-600">mesmo polo</span>
                 ) : null}
                 {isProcessEvidence(e.evidence) && e.evidence.samePolo === false ? (
                   <span className="text-[0.65rem] text-red-600">polos opostos</span>
+                ) : null}
+                {isCorporateEvidence(e.evidence) ? (
+                  <div className="mt-0.5 flex flex-col gap-0.5 text-[0.65rem] text-muted-foreground">
+                    <span>{e.evidence.vinculo}</span>
+                    {e.evidence.percentualParticipacao !== undefined ? (
+                      <span>{e.evidence.percentualParticipacao}% participação</span>
+                    ) : null}
+                    {e.evidence.dataInicioRelacionamento ? (
+                      <span>
+                        início:{' '}
+                        {new Date(e.evidence.dataInicioRelacionamento).toLocaleDateString('pt-BR')}
+                      </span>
+                    ) : null}
+                  </div>
                 ) : null}
               </li>
             ))}
