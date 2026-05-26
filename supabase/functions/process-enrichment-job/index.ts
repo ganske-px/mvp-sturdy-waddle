@@ -24,7 +24,7 @@ type Body = { jobId?: unknown };
 
 const REQUIRED_ENV = [
   'SUPABASE_URL',
-  'SUPABASE_SECRET_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
   'NETRIN_BASE_URL',
   'NETRIN_TOKEN',
 ] as const;
@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const supabaseSecret = Deno.env.get('SUPABASE_SECRET_KEY');
+  const supabaseSecret = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !supabaseSecret) {
     return jsonResponse({ error: 'missing supabase connection env vars' }, 500);
@@ -65,10 +65,10 @@ Deno.serve(async (req: Request) => {
     try {
       const env: Record<string, string> = {
         SUPABASE_URL: supabaseUrl,
-        SUPABASE_SECRET_KEY: supabaseSecret,
+        SUPABASE_SERVICE_ROLE_KEY: supabaseSecret,
       };
       for (const k of REQUIRED_ENV) {
-        if (k === 'SUPABASE_URL' || k === 'SUPABASE_SECRET_KEY') continue;
+        if (k === 'SUPABASE_URL' || k === 'SUPABASE_SERVICE_ROLE_KEY') continue;
         const v = Deno.env.get(k);
         if (!v) throw new Error(`missing env: ${k}`);
         env[k] = v;

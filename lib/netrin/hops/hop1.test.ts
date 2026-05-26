@@ -14,11 +14,16 @@ describe('runHop1', () => {
       audit: auditSpy,
       getCache: async () => ({
         payload: {
-          'empresas-relacionadas-cpf': {
-            negociosRelacionados: [{ cnpj: '12345678000190' }],
+          empresasRelacionadasCPF: {
+            negociosRelacionados: [
+              {
+                entidadeRelacionadaDocumento: '12345678000190',
+                entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+              },
+            ],
           },
-        },
-        slugsFetched: ['esp-cpf', 'empresas-relacionadas-cpf'],
+        } as never,
+        slugsFetched: ['pep-kyc-cpf', 'empresas-relacionadas-cpf'],
         fetchedAt: '2026-05-26T00:00:00Z',
       }),
       setCache: async () => {},
@@ -39,8 +44,15 @@ describe('runHop1', () => {
 
   it('calls Netrin and writes cache on miss', async () => {
     const fetchSpy = vi.fn(async () => ({
-      'esp-cpf': { nome: 'JOAO' },
-      'empresas-relacionadas-cpf': { negociosRelacionados: [{ cnpj: '98765432000110' }] },
+      CpfBirthdate: { nome: 'JOAO' },
+      empresasRelacionadasCPF: {
+        negociosRelacionados: [
+          {
+            entidadeRelacionadaDocumento: '98765432000110',
+            entidadeRelacionadadaTipoDeDocumento: 'CNPJ',
+          },
+        ],
+      },
     }));
     const setSpy = vi.fn(async () => {});
     const result = await runHop1({

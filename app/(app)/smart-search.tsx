@@ -4,8 +4,9 @@ import type { Service } from '@/lib/auth/permissions';
 import { type DetectionState, detect } from '@/lib/search/detect';
 import { cn } from '@/lib/utils';
 import { ArrowRightIcon, CornerDownLeftIcon } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
+import { searchByCnpj } from './search/company/actions';
+import { searchPerson } from './search/person/actions';
 
 type Role = 'admin' | 'operator';
 
@@ -59,15 +60,6 @@ function deriveStatus(detection: DetectionState, role: Role, perms: ReadonlySet<
   };
 }
 
-function destinationFor(detection: DetectionState): string | null {
-  if (detection.kind !== 'ready') return null;
-  if (detection.type === 'cnpj') {
-    return `/search/company?q=${encodeURIComponent(detection.normalized)}`;
-  }
-  const t = detection.type === 'cpf' ? 'cpf' : 'name';
-  return `/search/person?q=${encodeURIComponent(detection.normalized)}&type=${t}`;
-}
-
 export function SmartSearch({
   role,
   permissions,
@@ -76,20 +68,25 @@ export function SmartSearch({
   permissions: readonly Service[];
 }) {
   const [value, setValue] = useState('');
-  const [, startTransition] = useTransition();
-  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
 
   const permSet = useMemo(() => new Set(permissions), [permissions]);
   const detection = useMemo(() => detect(value), [value]);
   const status = useMemo(() => deriveStatus(detection, role, permSet), [detection, role, permSet]);
 
-  const dest = status.tone === 'ready' ? destinationFor(detection) : null;
-  const canSubmit = dest !== null;
+  const canSubmit = status.tone === 'ready' && detection.kind === 'ready' && !isPending;
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!dest) return;
-    startTransition(() => router.push(dest));
+    if (detection.kind !== 'ready') return;
+    const { type, normalized } = detection;
+    startTransition(async () => {
+      if (type === 'cnpj') {
+        await searchByCnpj({ rawInput: normalized });
+      } else {
+        await searchPerson({ type, rawInput: normalized });
+      }
+    });
   }
 
   return (

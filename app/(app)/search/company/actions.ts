@@ -9,27 +9,13 @@ import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import type { PredictusProcess } from '@/lib/predictus/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import {
-  format as formatCnpj,
-  isValid as isCnpjValid,
-  mask as maskCnpj,
-} from '@/lib/validators/cnpj';
+import { isValid as isCnpjValid, mask as maskCnpj } from '@/lib/validators/cnpj';
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 export type SearchByCnpjInput = { rawInput: string };
 
-export type SearchByCnpjOk = {
-  ok: true;
-  results: PredictusProcess[];
-  displayTerm: string;
-  cached: boolean;
-  fetchedAt: string;
-  networkHash: string | null;
-};
-
-export type SearchByCnpjErr = { ok: false; error: string };
-
-export type SearchByCnpjResult = SearchByCnpjOk | SearchByCnpjErr;
+export type SearchByCnpjResult = { ok: false; error: string };
 
 export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCnpjResult> {
   const supabase = await createClient();
@@ -46,8 +32,6 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
 
   const documentHash = hashDocument('cnpj', trimmed);
   const termPreview = maskCnpj(trimmed);
-  const displayTerm = formatCnpj(trimmed);
-  const networkHash = documentHash;
 
   const admin = createAdminClient();
   const requestContext = extractRequestContext(await headers());
@@ -92,18 +76,10 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
     } catch (e) {
       console.warn('enrichment job creation failed:', e);
     }
-    return {
-      ok: true,
-      results: cached.results,
-      displayTerm,
-      cached: true,
-      fetchedAt: cached.fetchedAt,
-      networkHash,
-    };
+    redirect(`/search/result/${encodeURIComponent(documentHash)}`);
   }
 
   let results: PredictusProcess[];
-  const fetchedAt = new Date().toISOString();
   try {
     const client = await createServerPredictusClient();
     results = await client.searchByCnpj(trimmed.replace(/\D/g, ''));
@@ -147,5 +123,5 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
     console.warn('enrichment job creation failed:', e);
   }
 
-  return { ok: true, results, displayTerm, cached: false, fetchedAt, networkHash };
+  redirect(`/search/result/${encodeURIComponent(documentHash)}`);
 }

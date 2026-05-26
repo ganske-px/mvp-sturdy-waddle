@@ -3,13 +3,10 @@
 export type NetrinDocumentType = 'cpf' | 'cnpj';
 
 export const HOP1_SLUGS = [
-  'esp-cpf',
-  'receita-federal-cpf',
   'pep-kyc-cpf',
-  'midias-consolidado',
-  'processos-cpf',
   'empresas-relacionadas-cpf',
-  'pessoas-impedidas-apostar',
+  'receita-federal-cpf-data-nascimento',
+  'midias-consolidado',
 ] as const;
 
 export const HOP2_SLUGS = [

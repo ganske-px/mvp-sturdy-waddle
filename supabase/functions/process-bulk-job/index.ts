@@ -26,7 +26,7 @@ type RequestBody = { jobId?: unknown };
 
 const REQUIRED_ENV = [
   'SUPABASE_URL',
-  'SUPABASE_SECRET_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
   'PREDICTUS_BASE_URL',
   'PREDICTUS_USERNAME',
   'PREDICTUS_PASSWORD',
@@ -60,7 +60,7 @@ Deno.serve(async (req: Request) => {
     env[key] = value;
   }
 
-  const admin = createClient(env.SUPABASE_URL as string, env.SUPABASE_SECRET_KEY as string, {
+  const admin = createClient(env.SUPABASE_URL as string, env.SUPABASE_SERVICE_ROLE_KEY as string, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 

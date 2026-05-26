@@ -103,6 +103,9 @@ export class NetrinClient {
     if (slugs.some((s) => s.startsWith('pep-kyc-'))) {
       params.set('acuracia', String(this.pepAcuracia));
     }
+    if (slugs.includes('midias-consolidado')) {
+      params.set('documento', docType.toUpperCase());
+    }
     return `${this.baseUrl}${COMPOSITE_PATH}?${params.toString()}`;
   }
 

@@ -8,6 +8,9 @@ export function IdentityCard({
   nome,
   dataNascimento,
   situacaoCadastral,
+  nomeMae,
+  idade,
+  genero,
 }: IdentityCardProps) {
   return (
     <Card>
@@ -31,11 +34,25 @@ export function IdentityCard({
               <span className="text-muted-foreground">Nome:</span> {nome ?? '—'}
             </div>
             <div>
-              <span className="text-muted-foreground">Nascimento:</span> {dataNascimento ?? '—'}
+              <span className="text-muted-foreground">Nascimento:</span>{' '}
+              {dataNascimento ?? '—'}
+              {typeof idade === 'number' ? (
+                <span className="text-muted-foreground"> · {idade} anos</span>
+              ) : null}
             </div>
             <div>
               <span className="text-muted-foreground">Situação:</span> {situacaoCadastral ?? '—'}
             </div>
+            {nomeMae ? (
+              <div>
+                <span className="text-muted-foreground">Nome da mãe:</span> {nomeMae}
+              </div>
+            ) : null}
+            {genero ? (
+              <div>
+                <span className="text-muted-foreground">Gênero:</span> {genero}
+              </div>
+            ) : null}
           </>
         )}
       </CardContent>

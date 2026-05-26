@@ -9,27 +9,16 @@ import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import type { PredictusProcess } from '@/lib/predictus/types';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { format as formatCpf, isValid as isCpfValid, mask as maskCpf } from '@/lib/validators/cpf';
+import { isValid as isCpfValid, mask as maskCpf } from '@/lib/validators/cpf';
 import { maskName } from '@/lib/validators/name';
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 export type PersonSearchType = 'cpf' | 'name';
 
 export type SearchPersonInput = { type: PersonSearchType; rawInput: string };
 
-export type SearchPersonOk = {
-  ok: true;
-  results: PredictusProcess[];
-  displayTerm: string;
-  searchType: PersonSearchType;
-  cached: boolean;
-  fetchedAt: string;
-  networkHash: string | null;
-};
-
-export type SearchPersonErr = { ok: false; error: string };
-
-export type SearchPersonResult = SearchPersonOk | SearchPersonErr;
+export type SearchPersonResult = { ok: false; error: string };
 
 export async function searchPerson(input: SearchPersonInput): Promise<SearchPersonResult> {
   const supabase = await createClient();
@@ -45,23 +34,18 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
 
   let documentHash: string;
   let termPreview: string;
-  let displayTerm: string;
 
   if (input.type === 'cpf') {
     if (!isCpfValid(trimmed)) return { ok: false, error: 'CPF inválido.' };
     documentHash = hashDocument('cpf', trimmed);
     termPreview = maskCpf(trimmed);
-    displayTerm = formatCpf(trimmed);
   } else {
     if (trimmed.length < 3) {
       return { ok: false, error: 'O nome precisa ter ao menos 3 caracteres.' };
     }
     documentHash = hashDocument('name', trimmed);
     termPreview = maskName(trimmed);
-    displayTerm = trimmed;
   }
-
-  const networkHash = input.type === 'name' ? null : documentHash;
 
   const admin = createAdminClient();
   const requestContext = extractRequestContext(await headers());
@@ -108,19 +92,10 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
         console.warn('enrichment job creation failed:', e);
       }
     }
-    return {
-      ok: true,
-      results: cached.results,
-      displayTerm,
-      searchType: input.type,
-      cached: true,
-      fetchedAt: cached.fetchedAt,
-      networkHash,
-    };
+    redirect(`/search/result/${encodeURIComponent(documentHash)}`);
   }
 
   let results: PredictusProcess[];
-  const fetchedAt = new Date().toISOString();
   try {
     const client = await createServerPredictusClient();
     results =
@@ -169,13 +144,5 @@ export async function searchPerson(input: SearchPersonInput): Promise<SearchPers
     }
   }
 
-  return {
-    ok: true,
-    results,
-    displayTerm,
-    searchType: input.type,
-    cached: false,
-    fetchedAt,
-    networkHash,
-  };
+  redirect(`/search/result/${encodeURIComponent(documentHash)}`);
 }

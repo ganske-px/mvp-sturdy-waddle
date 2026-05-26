@@ -12,24 +12,26 @@ export type IdentityCardProps = {
   nome?: string;
   dataNascimento?: string;
   situacaoCadastral?: string;
+  nomeMae?: string;
+  idade?: number;
+  genero?: string;
 };
 
 export type PepCardProps = {
   status: AntifraudeStatus;
   currentlyPEP?: boolean;
   currentlySanctioned?: boolean;
+  previouslySanctioned?: boolean;
   historicoCount?: number;
 };
 
 export type MediaCardProps = {
   status: AntifraudeStatus;
   mencoes?: number;
-  itens?: { titulo: string; url?: string; data?: string }[];
-};
-
-export type RestrictionsCardProps = {
-  status: AntifraudeStatus;
-  apostasImpedido?: boolean;
+  qtdMidias?: number;
+  qtdListas?: number;
+  qtdGov?: number;
+  qtdAmb?: number;
 };
 
 export type RelatedCompanyEntry = {

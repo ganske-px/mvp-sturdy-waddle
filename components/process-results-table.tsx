@@ -36,13 +36,13 @@ export function ProcessResultsTable({ results }: { results: PredictusProcess[] }
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
   return (
-    <Table>
+    <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead>Processo</TableHead>
-          <TableHead>Tribunal</TableHead>
+          <TableHead className="w-[260px]">Processo</TableHead>
+          <TableHead className="w-[96px]">Tribunal</TableHead>
           <TableHead>Classe</TableHead>
-          <TableHead className="text-right">Valor</TableHead>
+          <TableHead className="w-[140px] text-right">Valor</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -58,16 +58,16 @@ export function ProcessResultsTable({ results }: { results: PredictusProcess[] }
                 <TableCell className="font-mono text-xs">
                   <span className="inline-flex items-center gap-1.5">
                     {isOpen ? (
-                      <ChevronDownIcon className="size-3 text-muted-foreground" />
+                      <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
                     ) : (
-                      <ChevronRightIcon className="size-3 text-muted-foreground" />
+                      <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
                     )}
-                    {p.numeroProcessoUnico ?? '—'}
+                    <span>{p.numeroProcessoUnico ?? '—'}</span>
                   </span>
                 </TableCell>
                 <TableCell className="text-sm">{tribunalShort(p.tribunal)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {classeShort(p.classeProcessual)}
+                <TableCell className="whitespace-normal text-sm text-muted-foreground">
+                  <span className="line-clamp-2">{classeShort(p.classeProcessual)}</span>
                 </TableCell>
                 <TableCell className="text-right font-medium tabular-nums">
                   {formatBRL(p.valorCausa?.valor)}

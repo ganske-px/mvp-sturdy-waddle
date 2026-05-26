@@ -3,7 +3,6 @@ import { IdentityCard } from '@/components/antifraude/identity-card';
 import { MediaCard } from '@/components/antifraude/media-card';
 import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
-import { RestrictionsCard } from '@/components/antifraude/restrictions-card';
 import type { RelatedCompanyEntry } from '@/components/antifraude/types';
 import { NetworkCta } from '@/components/network-cta';
 import { ProcessResultsTable } from '@/components/process-results-table';
@@ -51,83 +50,95 @@ type SearchRow = {
 // Each helper reads a specific slug from a composite payload and returns a
 // typed subset. We use `unknown` casts with explicit narrowing to avoid `any`.
 
-type EspCpf = {
+type CpfBirthdate = {
   nome?: string;
   dataNascimento?: string;
   situacaoCadastral?: string;
+  nomeMae?: string;
+  idade?: number;
+  genero?: string;
 };
 
 function extractIdentityFromHop1(p: NetrinCompositePayload) {
-  const raw = p['esp-cpf'] as EspCpf | null | undefined;
+  const raw = (p as Record<string, unknown>).CpfBirthdate as CpfBirthdate | null | undefined;
   return {
     nome: typeof raw?.nome === 'string' ? raw.nome : undefined,
     dataNascimento: typeof raw?.dataNascimento === 'string' ? raw.dataNascimento : undefined,
     situacaoCadastral:
       typeof raw?.situacaoCadastral === 'string' ? raw.situacaoCadastral : undefined,
+    nomeMae: typeof raw?.nomeMae === 'string' ? raw.nomeMae : undefined,
+    idade: typeof raw?.idade === 'number' ? raw.idade : undefined,
+    genero: typeof raw?.genero === 'string' ? raw.genero : undefined,
   };
 }
 
-type PepKycEntry = {
-  situacaoAtual?: boolean | string;
-  sancionadoAtual?: boolean | string;
+type PepKyc = {
+  currentlyPEP?: unknown;
+  currentlySanctioned?: unknown;
+  previouslySanctioned?: unknown;
+  historyPEP?: unknown[];
+  sanctionsHistory?: unknown[];
 };
 
-type PepKycSlug = {
-  peps?: unknown[];
-  sancoes?: unknown[];
-};
+function isSim(v: unknown): boolean {
+  return v === true || v === 'Sim' || v === 'SIM' || v === 'S';
+}
 
 function extractPepFromHop1(p: NetrinCompositePayload) {
-  const slug = p['pep-kyc-cpf'] as PepKycSlug | null | undefined;
-  const peps: PepKycEntry[] = Array.isArray(slug?.peps) ? (slug.peps as PepKycEntry[]) : [];
-  const sancoes: PepKycEntry[] = Array.isArray(slug?.sancoes)
-    ? (slug.sancoes as PepKycEntry[])
-    : [];
-  const currentlyPEP = peps.some((e) => e.situacaoAtual === true || e.situacaoAtual === 'ATIVO');
-  const currentlySanctioned = sancoes.some(
-    (e) => e.sancionadoAtual === true || e.sancionadoAtual === 'ATIVO',
-  );
+  const slug = (p as Record<string, unknown>).pepKyc as PepKyc | null | undefined;
+  const historyPEP = Array.isArray(slug?.historyPEP) ? slug.historyPEP : [];
+  const sanctionsHistory = Array.isArray(slug?.sanctionsHistory) ? slug.sanctionsHistory : [];
+  // The API ships placeholder rows where every field is empty — filter those out.
+  const isNonEmpty = (row: unknown): boolean =>
+    !!row &&
+    typeof row === 'object' &&
+    Object.values(row as Record<string, unknown>).some((v) => v !== '' && v !== 0 && v != null);
+  const peps = historyPEP.filter(isNonEmpty);
+  const sancoes = sanctionsHistory.filter(isNonEmpty);
   return {
-    currentlyPEP,
-    currentlySanctioned,
+    currentlyPEP: isSim(slug?.currentlyPEP),
+    currentlySanctioned: isSim(slug?.currentlySanctioned),
+    previouslySanctioned: isSim(slug?.previouslySanctioned),
     historicoCount: peps.length + sancoes.length,
   };
 }
 
-type MidiaItem = {
-  titulo?: unknown;
-  url?: unknown;
-  dataPublicacao?: unknown;
-};
-
-type MidiaSlug = {
-  mencoes?: unknown;
-  itens?: unknown[];
+type MidiasConsolidado = {
+  midiasRiscoReputacional?: {
+    riscoReputacional?: {
+      value?: {
+        qtdTotal?: unknown;
+        qtdMidias?: unknown;
+        qtdListas?: unknown;
+        qtdGov?: unknown;
+        qtdAmb?: unknown;
+      };
+    };
+  };
 };
 
 function extractMediaFromHop1(p: NetrinCompositePayload) {
-  const slug = p['midias-consolidado'] as MidiaSlug | null | undefined;
-  const mencoes = typeof slug?.mencoes === 'number' ? slug.mencoes : 0;
-  const rawItens: MidiaItem[] = Array.isArray(slug?.itens) ? (slug.itens as MidiaItem[]) : [];
-  const itens = rawItens.map((it) => ({
-    titulo: typeof it.titulo === 'string' ? it.titulo : '(sem título)',
-    url: typeof it.url === 'string' ? it.url : undefined,
-    data: typeof it.dataPublicacao === 'string' ? it.dataPublicacao : undefined,
-  }));
-  return { mencoes, itens };
-}
-
-function extractRestrictionsFromHop1(p: NetrinCompositePayload) {
-  const slug = p['pessoas-impedidas-apostar'] as { impedido?: unknown } | null | undefined;
-  const apostasImpedido = slug?.impedido === true || slug?.impedido === 'S';
-  return { apostasImpedido };
+  const slug = (p as Record<string, unknown>).midiasConsolidado as
+    | MidiasConsolidado
+    | null
+    | undefined;
+  const value = slug?.midiasRiscoReputacional?.riscoReputacional?.value;
+  const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+  return {
+    mencoes: num(value?.qtdTotal),
+    qtdMidias: num(value?.qtdMidias),
+    qtdListas: num(value?.qtdListas),
+    qtdGov: num(value?.qtdGov),
+    qtdAmb: num(value?.qtdAmb),
+  };
 }
 
 type NegocioItem = {
-  cnpj?: unknown;
-  razaoSocial?: unknown;
-  tipoVinculo?: unknown;
-  vinculoDoRelacionamento?: unknown;
+  entidadeRelacionadaDocumento?: unknown;
+  entidadeRelacionadadaTipoDeDocumento?: unknown;
+  entidadeRelacionadaNome?: unknown;
+  tipoDeRelacionamento?: unknown;
+  nivelDeRelacionamento?: unknown;
   dataInicioRelacionamento?: unknown;
   dataFimRelacionamento?: unknown;
 };
@@ -158,29 +169,37 @@ function buildRelatedCompanies(
   hop1: NetrinCompositePayload,
   byCnpj: Record<string, NetrinCompositePayload>,
 ): RelatedCompanyEntry[] {
-  const empresasSlug = hop1['empresas-relacionadas-cpf'] as EmpresasSlug | null | undefined;
+  const empresasSlug = (hop1 as Record<string, unknown>).empresasRelacionadasCPF as
+    | EmpresasSlug
+    | null
+    | undefined;
   const negocios: NegocioItem[] = Array.isArray(empresasSlug?.negociosRelacionados)
     ? (empresasSlug.negociosRelacionados as NegocioItem[])
     : [];
 
   return negocios.reduce<RelatedCompanyEntry[]>((acc, item) => {
-    const cnpjRaw = typeof item.cnpj === 'string' ? item.cnpj.replace(/\D/g, '') : '';
+    const isCnpj = item.entidadeRelacionadadaTipoDeDocumento === 'CNPJ';
+    if (!isCnpj) return acc;
+
+    const cnpjRaw =
+      typeof item.entidadeRelacionadaDocumento === 'string'
+        ? item.entidadeRelacionadaDocumento.replace(/\D/g, '')
+        : '';
     if (cnpjRaw.length !== 14) return acc;
 
     const vinculo =
-      typeof item.tipoVinculo === 'string'
-        ? item.tipoVinculo
-        : typeof item.vinculoDoRelacionamento === 'string'
-          ? item.vinculoDoRelacionamento
-          : undefined;
+      typeof item.tipoDeRelacionamento === 'string' ? item.tipoDeRelacionamento : undefined;
 
     const dataInicio =
       typeof item.dataInicioRelacionamento === 'string' ? item.dataInicioRelacionamento : undefined;
     const dataFim =
       typeof item.dataFimRelacionamento === 'string' ? item.dataFimRelacionamento : undefined;
-    const ativo = !dataFim || dataFim === '9999-12-31';
+    const ativo =
+      !dataFim ||
+      dataFim === '9999-12-31' ||
+      dataFim === '0001-01-01T00:00:00Z' ||
+      dataFim.startsWith('0001-');
 
-    // Look up hop2 enrichment for this CNPJ if available
     let hop2: RelatedCompanyEntry['hop2'] | undefined;
     const cnpjHash = hashDocument('cnpj', cnpjRaw);
     const hop2Payload = byCnpj[cnpjHash];
@@ -218,7 +237,8 @@ function buildRelatedCompanies(
 
     acc.push({
       cnpj: cnpjRaw,
-      razaoSocial: typeof item.razaoSocial === 'string' ? item.razaoSocial : undefined,
+      razaoSocial:
+        typeof item.entidadeRelacionadaNome === 'string' ? item.entidadeRelacionadaNome : undefined,
       vinculo,
       ativo,
       dataInicio,
@@ -286,7 +306,6 @@ export default async function ResultPage({
   const identityProps = hop1 ? extractIdentityFromHop1(hop1) : null;
   const pepProps = hop1 ? extractPepFromHop1(hop1) : null;
   const mediaProps = hop1 ? extractMediaFromHop1(hop1) : null;
-  const restrictionsProps = hop1 ? extractRestrictionsFromHop1(hop1) : null;
   const relatedItems = hop1 ? buildRelatedCompanies(hop1, byCnpj) : [];
 
   // Status for cards: if job exists but is still running, show skeleton state
@@ -302,7 +321,7 @@ export default async function ResultPage({
           : ('success' as const);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-12">
       <header className="flex flex-col gap-2">
         <span className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-primary/80">
           Consulta arquivada
@@ -409,24 +428,26 @@ export default async function ResultPage({
               nome={identityProps?.nome}
               dataNascimento={identityProps?.dataNascimento}
               situacaoCadastral={identityProps?.situacaoCadastral}
+              nomeMae={identityProps?.nomeMae}
+              idade={identityProps?.idade}
+              genero={identityProps?.genero}
             />
             <PepCard
               status={cardStatus}
               currentlyPEP={pepProps?.currentlyPEP}
               currentlySanctioned={pepProps?.currentlySanctioned}
+              previouslySanctioned={pepProps?.previouslySanctioned}
               historicoCount={pepProps?.historicoCount}
             />
             <MediaCard
               status={cardStatus}
               mencoes={mediaProps?.mencoes}
-              itens={mediaProps?.itens}
+              qtdMidias={mediaProps?.qtdMidias}
+              qtdListas={mediaProps?.qtdListas}
+              qtdGov={mediaProps?.qtdGov}
+              qtdAmb={mediaProps?.qtdAmb}
             />
           </div>
-
-          <RestrictionsCard
-            status={cardStatus}
-            apostasImpedido={restrictionsProps?.apostasImpedido}
-          />
 
           <RelatedCompanies status={cardStatus} items={relatedItems} />
         </section>
