@@ -1,5 +1,5 @@
 import type { AuditEvent } from '@/lib/audit';
-import { extractPivotCpfs, type PivotCpf } from '@/lib/netrin/parsers/pivot-cpfs';
+import { type PivotCpf, extractPivotCpfs } from '@/lib/netrin/parsers/pivot-cpfs';
 import {
   HOP2_SLUGS,
   type NetrinCompositePayload,
@@ -13,7 +13,13 @@ export type RunHop2Deps = {
   userId: string;
   jobId: string;
   audit: (event: AuditEvent) => Promise<void>;
-  getCache: (hash: string) => Promise<{ payload: NetrinCompositePayload; slugsFetched: string[]; fetchedAt: string } | null>;
+  getCache: (
+    hash: string,
+  ) => Promise<{
+    payload: NetrinCompositePayload;
+    slugsFetched: string[];
+    fetchedAt: string;
+  } | null>;
   setCache: (
     hash: string,
     type: NetrinDocumentType,

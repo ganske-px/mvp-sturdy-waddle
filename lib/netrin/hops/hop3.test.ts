@@ -18,12 +18,14 @@ describe('runHop3', () => {
     });
     expect(result.cached).toBe(false);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [, , slugs] = fetchSpy.mock.calls[0] as [unknown, unknown, readonly string[]];
+    const [, , slugs] = fetchSpy.mock.calls[0] as unknown as [unknown, unknown, readonly string[]];
     expect(slugs).toContain('esp-cpf');
     expect(slugs).toContain('pep-kyc-cpf');
     expect(slugs).toContain('processos-cpf');
-    expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({ hop: 3 }),
-    }));
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ hop: 3 }),
+      }),
+    );
   });
 });

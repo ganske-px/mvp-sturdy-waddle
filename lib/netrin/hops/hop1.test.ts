@@ -28,11 +28,13 @@ describe('runHop1', () => {
     expect(result.cached).toBe(true);
     expect(result.pivotCnpjs).toEqual(['12345678000190']);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(auditSpy).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'enrichment_call',
-      documentHash: 'cpf:abc',
-      metadata: expect.objectContaining({ hop: 1, jobId: 'j1' }),
-    }));
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'enrichment_call',
+        documentHash: 'cpf:abc',
+        metadata: expect.objectContaining({ hop: 1, jobId: 'j1' }),
+      }),
+    );
   });
 
   it('calls Netrin and writes cache on miss', async () => {
