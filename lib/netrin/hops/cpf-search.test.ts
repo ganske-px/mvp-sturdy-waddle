@@ -1,12 +1,12 @@
-// lib/netrin/hops/hop1.test.ts
+// lib/netrin/hops/cpf-search.test.ts
 import { describe, expect, it, vi } from 'vitest';
-import { runHop1 } from './hop1';
+import { runCpfSearch } from './cpf-search';
 
-describe('runHop1', () => {
+describe('runCpfSearch', () => {
   it('returns cached payload + extracts CNPJ pivots, no fetch', async () => {
     const auditSpy = vi.fn(async () => {});
     const fetchSpy = vi.fn();
-    const result = await runHop1({
+    const result = await runCpfSearch({
       documentRaw: '12345678909',
       documentHash: 'cpf:abc',
       userId: 'u1',
@@ -56,7 +56,7 @@ describe('runHop1', () => {
       // as never: mock payload uses friendly camelCase (CpfBirthdate), but Netrin returns snake_case; cast bridges the shape
     } as never));
     const setSpy = vi.fn(async () => {});
-    const result = await runHop1({
+    const result = await runCpfSearch({
       documentRaw: '12345678909',
       documentHash: 'cpf:abc',
       userId: 'u1',

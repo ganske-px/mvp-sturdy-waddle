@@ -21,7 +21,7 @@ describe('processEnrichmentJob', () => {
       recordCall: async (input) => {
         calls.push(`record:${input.hop}:${input.status}`);
       },
-      runHop1: async () => ({
+      runCpfSearch: async () => ({
         payload: {},
         pivotCnpjs: ['11111111000111', '22222222000222'],
         cached: false,
@@ -55,7 +55,7 @@ describe('processEnrichmentJob', () => {
       setHopTotals: async () => {},
       bumpHopDone: async () => {},
       recordCall: async () => {},
-      runHop1: async () => ({ payload: {}, pivotCnpjs: ['11111111000111'], cached: false }),
+      runCpfSearch: async () => ({ payload: {}, pivotCnpjs: ['11111111000111'], cached: false }),
       runHop2: async () => {
         throw new Error('boom');
       },
@@ -73,7 +73,7 @@ describe('processEnrichmentJob', () => {
       setHopTotals: async () => {},
       bumpHopDone: async () => {},
       recordCall: async () => {},
-      runHop1: async () => {
+      runCpfSearch: async () => {
         throw new Error('upstream');
       },
       runHop2: async () => ({ payload: {}, pivotCpfs: [], cached: false }),
@@ -94,7 +94,7 @@ describe('processEnrichmentJob', () => {
       setHopTotals: async () => {},
       bumpHopDone: async () => {},
       recordCall: async () => {},
-      runHop1: async () => {
+      runCpfSearch: async () => {
         throw new Error('should not be called');
       },
       runHop2: async () => ({

@@ -1,5 +1,5 @@
 import { hashDocument } from '@/lib/hash.ts';
-import type { RunHop1Result } from './hops/hop1.ts';
+import type { RunCpfSearchResult } from './hops/cpf-search.ts';
 import type { RunHop2Result } from './hops/hop2.ts';
 import type { RunHop3Result } from './hops/hop3.ts';
 import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store.ts';
@@ -29,7 +29,7 @@ export type ProcessorDeps = {
   ) => Promise<void>;
   bumpHopDone: (jobId: string, hop: 2 | 3) => Promise<void>;
   recordCall: (input: RecordCallInput) => Promise<void>;
-  runHop1: () => Promise<RunHop1Result>;
+  runCpfSearch: () => Promise<RunCpfSearchResult>;
   runHop2: (cnpjRaw: string) => Promise<RunHop2Result>;
   runHop3: (cpfRaw: string) => Promise<RunHop3Result>;
   finalize: (collected: {
@@ -59,19 +59,19 @@ export async function processEnrichmentJob(
   let pivotCnpjs: string[] = [];
   if (deps.job.rootType === 'cpf') {
     try {
-      const hop1 = await deps.runHop1();
-      hop1Payload = hop1.payload;
-      pivotCnpjs = hop1.pivotCnpjs;
+      const cpfSearch = await deps.runCpfSearch();
+      hop1Payload = cpfSearch.payload;
+      pivotCnpjs = cpfSearch.pivotCnpjs;
       await deps.recordCall({
         jobId,
         hop: 1,
         documentHash: deps.job.rootHash,
         documentType: 'cpf',
         slugs: [],
-        status: statusFromCache(hop1.cached),
-        cached: hop1.cached,
+        status: statusFromCache(cpfSearch.cached),
+        cached: cpfSearch.cached,
       });
-      await deps.setHop1Status(jobId, hop1.cached ? 'cache_hit' : 'success');
+      await deps.setHop1Status(jobId, cpfSearch.cached ? 'cache_hit' : 'success');
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       await deps.recordCall({

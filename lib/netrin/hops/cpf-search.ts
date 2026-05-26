@@ -7,7 +7,7 @@ import {
   type NetrinSlug,
 } from '@/lib/netrin/types.ts';
 
-export type RunHop1Deps = {
+export type CpfSearchDeps = {
   documentRaw: string;
   documentHash: string;
   userId: string;
@@ -31,13 +31,13 @@ export type RunHop1Deps = {
   ) => Promise<NetrinCompositePayload>;
 };
 
-export type RunHop1Result = {
+export type RunCpfSearchResult = {
   payload: NetrinCompositePayload;
   pivotCnpjs: string[];
   cached: boolean;
 };
 
-export async function runHop1(deps: RunHop1Deps): Promise<RunHop1Result> {
+export async function runCpfSearch(deps: CpfSearchDeps): Promise<RunCpfSearchResult> {
   await deps.audit({
     userId: deps.userId,
     action: 'enrichment_call',
