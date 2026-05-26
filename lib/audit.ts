@@ -1,4 +1,4 @@
-import type { Database } from '@/lib/supabase/types';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type AuditAction = Database['public']['Tables']['audit_log']['Row']['action'];

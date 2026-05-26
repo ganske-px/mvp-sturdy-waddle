@@ -1,9 +1,9 @@
-import { hashDocument } from '@/lib/hash';
-import type { RunHop1Result } from './hops/hop1';
-import type { RunHop2Result } from './hops/hop2';
-import type { RunHop3Result } from './hops/hop3';
-import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store';
-import type { NetrinCompositePayload } from './types';
+import { hashDocument } from '@/lib/hash.ts';
+import type { RunHop1Result } from './hops/hop1.ts';
+import type { RunHop2Result } from './hops/hop2.ts';
+import type { RunHop3Result } from './hops/hop3.ts';
+import type { EnrichmentCallStatus, EnrichmentJobStatus, RecordCallInput } from './job-store.ts';
+import type { NetrinCompositePayload } from './types.ts';
 
 export type ProcessorJob = {
   rootType: 'cpf' | 'cnpj';

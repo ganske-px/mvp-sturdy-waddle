@@ -5,11 +5,11 @@
 // associated calls, then bulk-fetches netrin_cache rows and decrypts them.
 // Designed to be called from a Next.js Server Component (no browser APIs).
 
-import { decryptNetrinText } from '@/lib/crypto/vault';
-import type { Database } from '@/lib/supabase/types';
+import { decryptNetrinText } from '@/lib/crypto/vault.ts';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { extractPivotCnpjs } from './parsers/pivot-cnpjs';
-import type { NetrinCompositePayload, NetrinDocumentType } from './types';
+import { extractPivotCnpjs } from './parsers/pivot-cnpjs.ts';
+import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 // ── Row shapes ──────────────────────────────────────────────────────────────
 

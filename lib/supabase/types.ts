@@ -374,6 +374,7 @@ export type Database = {
           started_at: string;
           finished_at: string | null;
           error: string | null;
+          document_encrypted: string | null;
         };
         Insert: {
           id?: string;
@@ -389,6 +390,7 @@ export type Database = {
           started_at?: string;
           finished_at?: string | null;
           error?: string | null;
+          document_encrypted?: string | null;
         };
         Update: {
           id?: string;
@@ -404,6 +406,7 @@ export type Database = {
           started_at?: string;
           finished_at?: string | null;
           error?: string | null;
+          document_encrypted?: string | null;
         };
       };
       enrichment_job_calls: {
@@ -470,5 +473,7 @@ export type Database = {
         Returns: undefined;
       };
     };
+    Views: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };

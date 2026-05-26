@@ -1,4 +1,4 @@
-import type { Database } from '@/lib/supabase/types';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type EnrichmentJobStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed';
@@ -8,6 +8,13 @@ export type FindOrCreateJobInput = {
   userId: string;
   rootHash: string;
   rootType: 'cpf' | 'cnpj';
+  /**
+   * Bytea ciphertext do documento (CPF/CNPJ) cifrado via Vault
+   * (`encrypt_payload` / `predictus_cache_key`). O Edge Function decifra esse
+   * valor para obter o documentRaw que a Netrin precisa. Não persistir
+   * plaintext em hipótese alguma.
+   */
+  documentEncrypted: string;
 };
 
 export type FindOrCreateJobResult = { jobId: string; created: boolean };
@@ -32,6 +39,7 @@ export async function findOrCreateJob(
       root_hash: input.rootHash,
       root_type: input.rootType,
       status: 'pending',
+      document_encrypted: input.documentEncrypted,
     } as never)
     .select('id')
     .single<{ id: string }>();

@@ -1,5 +1,5 @@
-import { isValid as isCnpjValid, normalize as normalizeCnpj } from '@/lib/validators/cnpj';
-import { isValid as isCpfValid, normalize as normalizeCpf } from '@/lib/validators/cpf';
+import { isValid as isCnpjValid, normalize as normalizeCnpj } from '@/lib/validators/cnpj.ts';
+import { isValid as isCpfValid, normalize as normalizeCpf } from '@/lib/validators/cpf.ts';
 
 const DEFAULT_MAX_DOCUMENTS = 250;
 

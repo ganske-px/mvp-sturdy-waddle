@@ -2,6 +2,7 @@
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
+import { encryptText } from '@/lib/crypto/vault';
 import { hashDocument } from '@/lib/hash';
 import { getCachedResults, setCachedResults } from '@/lib/predictus/cache';
 import { createServerPredictusClient } from '@/lib/predictus/server-client';
@@ -81,26 +82,13 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
     } as never);
     try {
       const { findOrCreateJob } = await import('@/lib/netrin/job-store');
-      const { jobId, created } = await findOrCreateJob(admin, {
+      const documentEncrypted = await encryptText(admin, trimmed.replace(/\D/g, ''));
+      await findOrCreateJob(admin, {
         userId: user.id,
         rootHash: documentHash,
         rootType: 'cnpj',
+        documentEncrypted,
       });
-      if (created) {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const secret = process.env.SUPABASE_SECRET_KEY;
-        if (supabaseUrl && secret) {
-          const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/process-enrichment-job`;
-          void fetch(url, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              Authorization: `Bearer ${secret}`,
-            },
-            body: JSON.stringify({ jobId, documentRaw: trimmed.replace(/\D/g, '') }),
-          }).catch((e) => console.warn('enrichment dispatch failed:', e));
-        }
-      }
     } catch (e) {
       console.warn('enrichment job creation failed:', e);
     }
@@ -148,26 +136,13 @@ export async function searchByCnpj(input: SearchByCnpjInput): Promise<SearchByCn
 
   try {
     const { findOrCreateJob } = await import('@/lib/netrin/job-store');
-    const { jobId, created } = await findOrCreateJob(admin, {
+    const documentEncrypted = await encryptText(admin, trimmed.replace(/\D/g, ''));
+    await findOrCreateJob(admin, {
       userId: user.id,
       rootHash: documentHash,
       rootType: 'cnpj',
+      documentEncrypted,
     });
-    if (created) {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const secret = process.env.SUPABASE_SECRET_KEY;
-      if (supabaseUrl && secret) {
-        const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/process-enrichment-job`;
-        void fetch(url, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            Authorization: `Bearer ${secret}`,
-          },
-          body: JSON.stringify({ jobId, documentRaw: trimmed.replace(/\D/g, '') }),
-        }).catch((e) => console.warn('enrichment dispatch failed:', e));
-      }
-    }
   } catch (e) {
     console.warn('enrichment job creation failed:', e);
   }

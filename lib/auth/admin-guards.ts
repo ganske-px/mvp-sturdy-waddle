@@ -1,5 +1,5 @@
 import 'server-only';
-import type { Database } from '@/lib/supabase/types';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export class LockoutError extends Error {

@@ -1,6 +1,6 @@
-import { createAdminClient } from '@/lib/supabase/admin';
-import { PredictusClient } from './client';
-import { SupabaseTokenStore } from './token-store';
+import { createAdminClient } from '@/lib/supabase/admin.ts';
+import { PredictusClient } from './client.ts';
+import { SupabaseTokenStore } from './token-store.ts';
 
 /**
  * Builds a PredictusClient wired to persist its access token in

@@ -1,4 +1,4 @@
-import type { BulkItemRow, BulkJobStatus, ItemOutcome, JobCounters } from './job-store';
+import type { BulkItemRow, BulkJobStatus, ItemOutcome, JobCounters } from './job-store.ts';
 
 const DEFAULT_RATE_LIMIT_MS = 3600; // 1000 Predictus reqs/hour
 const DEFAULT_BATCH_SIZE = 250;

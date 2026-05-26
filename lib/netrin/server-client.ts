@@ -1,5 +1,5 @@
 // lib/netrin/server-client.ts
-import { NetrinClient } from './client';
+import { NetrinClient } from './client.ts';
 
 const REQUIRED_ENV = ['NETRIN_BASE_URL', 'NETRIN_TOKEN'] as const;
 

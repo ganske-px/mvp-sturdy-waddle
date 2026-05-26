@@ -1,6 +1,6 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { supabaseEnv } from './env';
-import type { Database } from './types';
+import { supabaseEnv } from './env.ts';
+import type { Database } from './types.ts';
 
 // Service-role client. Bypasses RLS. Only ever instantiate this in code that
 // runs server-side under operator authority (Server Actions, Route Handlers,

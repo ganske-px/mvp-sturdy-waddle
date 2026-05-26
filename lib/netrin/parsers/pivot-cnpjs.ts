@@ -1,5 +1,5 @@
 // lib/netrin/parsers/pivot-cnpjs.ts
-import type { NetrinCompositePayload } from '@/lib/netrin/types';
+import type { NetrinCompositePayload } from '@/lib/netrin/types.ts';
 
 type Negocio = { cnpj?: unknown };
 

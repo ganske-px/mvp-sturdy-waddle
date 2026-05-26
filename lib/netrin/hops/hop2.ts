@@ -1,11 +1,11 @@
-import type { AuditEvent } from '@/lib/audit';
-import { type PivotCpf, extractPivotCpfs } from '@/lib/netrin/parsers/pivot-cpfs';
+import type { AuditEvent } from '@/lib/audit.ts';
+import { type PivotCpf, extractPivotCpfs } from '@/lib/netrin/parsers/pivot-cpfs.ts';
 import {
   HOP2_SLUGS,
   type NetrinCompositePayload,
   type NetrinDocumentType,
   type NetrinSlug,
-} from '@/lib/netrin/types';
+} from '@/lib/netrin/types.ts';
 
 export type RunHop2Deps = {
   cnpjRaw: string;

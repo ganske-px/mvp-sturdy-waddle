@@ -1,10 +1,10 @@
-import type { AuditEvent } from '@/lib/audit';
+import type { AuditEvent } from '@/lib/audit.ts';
 import {
   HOP3_SLUGS,
   type NetrinCompositePayload,
   type NetrinDocumentType,
   type NetrinSlug,
-} from '@/lib/netrin/types';
+} from '@/lib/netrin/types.ts';
 
 export type RunHop3Deps = {
   cpfRaw: string;

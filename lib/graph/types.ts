@@ -1,4 +1,4 @@
-import type { PredictusProcess } from '@/lib/predictus/types';
+import type { PredictusProcess } from '@/lib/predictus/types.ts';
 
 export type NodeType = 'cpf' | 'cnpj' | 'lawyer';
 

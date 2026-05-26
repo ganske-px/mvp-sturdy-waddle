@@ -1,5 +1,5 @@
-import { isValid as isCnpjValid } from '@/lib/validators/cnpj';
-import { isValid as isCpfValid } from '@/lib/validators/cpf';
+import { isValid as isCnpjValid } from '@/lib/validators/cnpj.ts';
+import { isValid as isCpfValid } from '@/lib/validators/cpf.ts';
 
 const CPF_LENGTH = 11;
 const CNPJ_LENGTH = 14;

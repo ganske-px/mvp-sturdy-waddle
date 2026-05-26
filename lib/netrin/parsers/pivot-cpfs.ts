@@ -1,5 +1,5 @@
 // lib/netrin/parsers/pivot-cpfs.ts
-import type { NetrinCompositePayload } from '@/lib/netrin/types';
+import type { NetrinCompositePayload } from '@/lib/netrin/types.ts';
 
 export type PivotCpf = {
   cpf: string;

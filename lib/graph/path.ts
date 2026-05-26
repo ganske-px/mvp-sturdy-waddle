@@ -41,10 +41,6 @@ export function findShortestPath<E extends EdgeLike>(
   while (queue.length > 0) {
     const current = queue.shift();
     if (current === undefined) break;
-    if (current === target) {
-      found = true;
-      break;
-    }
     const neighbors = adj.get(current) ?? [];
     for (const { neighbor, edgeIndex } of neighbors) {
       if (visited.has(neighbor)) continue;

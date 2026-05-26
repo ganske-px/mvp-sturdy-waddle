@@ -1,7 +1,7 @@
-import type { Database } from '@/lib/supabase/types';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { encryptLabel } from './label-crypto';
-import type { ExtractedEdge, ExtractedNode } from './types';
+import { encryptLabel } from './label-crypto.ts';
+import type { ExtractedEdge, ExtractedNode } from './types.ts';
 
 // How many encrypt_graph_label RPCs to fire in parallel. Each call is a
 // network round-trip to PostgREST; sequential iteration was the difference

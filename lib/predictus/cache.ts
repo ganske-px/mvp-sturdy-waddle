@@ -1,9 +1,9 @@
-import { decryptText, encryptText } from '@/lib/crypto/vault';
-import { extractGraph } from '@/lib/graph/extractor';
-import { upsertGraph } from '@/lib/graph/writer';
-import type { Database } from '@/lib/supabase/types';
+import { decryptText, encryptText } from '@/lib/crypto/vault.ts';
+import { extractGraph } from '@/lib/graph/extractor.ts';
+import { upsertGraph } from '@/lib/graph/writer.ts';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PredictusProcess, PredictusSearchType } from './types';
+import type { PredictusProcess, PredictusSearchType } from './types.ts';
 
 export const CACHE_TTL_DAYS = 30;
 

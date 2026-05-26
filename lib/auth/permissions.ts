@@ -1,5 +1,5 @@
 import 'server-only';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server.ts';
 import { redirect } from 'next/navigation';
 
 export type Service = 'search_person' | 'search_company' | 'search_bulk' | 'search_network';

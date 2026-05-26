@@ -1,4 +1,4 @@
-import { type PredictusClientConfig, PredictusError, type PredictusSearchResult } from './types';
+import { type PredictusClientConfig, PredictusError, type PredictusSearchResult } from './types.ts';
 
 const AUTH_PATH = '/auth';
 const ENDPOINTS = {

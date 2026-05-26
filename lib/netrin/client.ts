@@ -5,7 +5,7 @@ import {
   type NetrinDocumentType,
   NetrinError,
   type NetrinSlug,
-} from './types';
+} from './types.ts';
 
 const COMPOSITE_PATH = '/v1/consulta-composta';
 const DEFAULT_MAX_RETRIES = 3;

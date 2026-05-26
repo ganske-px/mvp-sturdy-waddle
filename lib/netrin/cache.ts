@@ -1,7 +1,7 @@
-import { decryptNetrinText, encryptNetrinText } from '@/lib/crypto/vault';
-import type { Database } from '@/lib/supabase/types';
+import { decryptNetrinText, encryptNetrinText } from '@/lib/crypto/vault.ts';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { NetrinCompositePayload, NetrinDocumentType } from './types';
+import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 export const NETRIN_CACHE_TTL_DAYS = 30;
 

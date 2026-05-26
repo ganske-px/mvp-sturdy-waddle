@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { normalize as normalizeCnpj } from '@/lib/validators/cnpj';
-import { normalize as normalizeCpf } from '@/lib/validators/cpf';
+import { normalize as normalizeCnpj } from '@/lib/validators/cnpj.ts';
+import { normalize as normalizeCpf } from '@/lib/validators/cpf.ts';
 
 export type HashDocumentType = 'cpf' | 'cnpj' | 'name' | 'lawyer';
 

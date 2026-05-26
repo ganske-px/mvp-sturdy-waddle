@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
-import { supabaseEnv } from './env';
-import type { Database } from './types';
+import { supabaseEnv } from './env.ts';
+import type { Database } from './types.ts';
 
 const PUBLIC_PATHS = ['/login', '/auth', '/access-denied'];
 

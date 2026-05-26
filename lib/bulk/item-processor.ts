@@ -1,10 +1,10 @@
-import type { AuditEvent } from '@/lib/audit';
-import type { CachedResult } from '@/lib/predictus/cache';
-import type { PredictusClient } from '@/lib/predictus/client';
-import type { PredictusProcess, PredictusSearchType } from '@/lib/predictus/types';
-import type { Database } from '@/lib/supabase/types';
+import type { AuditEvent } from '@/lib/audit.ts';
+import type { CachedResult } from '@/lib/predictus/cache.ts';
+import type { PredictusClient } from '@/lib/predictus/client.ts';
+import type { PredictusProcess, PredictusSearchType } from '@/lib/predictus/types.ts';
+import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BulkItemRow, ItemOutcome } from './job-store';
+import type { BulkItemRow, ItemOutcome } from './job-store.ts';
 
 /**
  * Combines cache lookup, Predictus call, cache write and audit log for a

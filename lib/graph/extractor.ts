@@ -1,13 +1,13 @@
-import { hashDocument } from '@/lib/hash';
-import { mask as maskCnpj } from '@/lib/validators/cnpj';
-import { mask as maskCpf } from '@/lib/validators/cpf';
+import { hashDocument } from '@/lib/hash.ts';
+import { mask as maskCnpj } from '@/lib/validators/cnpj.ts';
+import { mask as maskCpf } from '@/lib/validators/cpf.ts';
 import type {
   ExtractGraphInput,
   ExtractedEdge,
   ExtractedGraph,
   ExtractedNode,
   NodeType,
-} from './types';
+} from './types.ts';
 
 type PartyShape = {
   tipo?: string;

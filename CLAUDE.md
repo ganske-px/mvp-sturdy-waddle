@@ -154,9 +154,9 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 
 ### Enrichment orchestration
 
-- Toda busca por CPF (`searchPerson`) ou CNPJ (`searchByCnpj`) chama `findOrCreateJob` e dispara fire-and-forget via `fetch` ao Edge Function `process-enrichment-job` quando `created=true`. Re-pesquisar o mesmo documento enquanto há job ativo reusa o job (índice parcial único em `enrichment_jobs.root_hash WHERE status IN ('pending','running')`).
-- A Server Action passa `{ jobId, documentRaw }` no body — `documentRaw` é necessário porque `root_hash` é one-way.
-- O Edge Function chama `processEnrichmentJob` com `runHop1` / `runHop2` / `runHop3` injetados — todos compartilhados de `lib/netrin/hops/`. Erro em Hop 1 = `failed`; erro em Hop 2/3 isolado por item = `partial`. Crash do Edge = órfão → `failed` em até 15 min via pg_cron.
+- Toda busca por CPF (`searchPerson`) ou CNPJ (`searchByCnpj`) chama `findOrCreateJob` passando `documentEncrypted` (CPF/CNPJ cifrado via `encryptText` / `predictus_cache_key`). Re-pesquisar o mesmo documento enquanto há job ativo reusa o job (índice parcial único em `enrichment_jobs.root_hash WHERE status IN ('pending','running')`). **Não há fetch fire-and-forget** — o trigger AFTER INSERT em `enrichment_jobs` chama o Edge Function via `pg_net.http_post` lendo URL e token de `vault.decrypted_secrets` (`enrichment_dispatch_url`, `enrichment_dispatch_token`).
+- O Edge Function recebe só `{ jobId }`, lê a row de `enrichment_jobs` (com `document_encrypted`), decifra via `decryptText` e usa o plaintext como `rootRaw`. Plaintext nunca persiste fora do stack frame.
+- O Edge Function chama `processEnrichmentJob` com `runHop1` / `runHop2` / `runHop3` injetados — todos compartilhados de `lib/netrin/hops/`. Erro em Hop 1 = `failed`; erro em Hop 2/3 isolado por item = `partial`. Crash do Edge ou trigger falhando (vault sem segredos, pg_net off) = órfão → `failed` em até 15 min via pg_cron.
 - Após todos os hops, `buildNetrinGraph(...)` produz `ExtractedGraph` (nodes cpf/cnpj, edges `corporate_relation`) e `upsertGraph` persiste no grafo compartilhado.
 - A página `/search/result/[hash]` chama `loadEnrichmentForRoot` (server-only) que decifra `netrin_cache` por hash e renderiza as cards via componentes em `components/antifraude/`. `EnrichmentRealtime` (client) assina `postgres_changes` em `enrichment_jobs` e `enrichment_job_calls` e chama `router.refresh()` em mudanças.
 
@@ -244,9 +244,17 @@ The full SQL lives under `supabase/migrations/`. Treat migrations as append-only
 2. `pnpm exec supabase start` (Docker required for local)
 3. `cp .env.local.example .env.local` and fill from `supabase status`
 4. `psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" -f scripts/bootstrap-vault.sql`
-5. Create an operator via Studio (Auth → Add user)
-6. Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` e `NETRIN_TOKEN` in `.env.local`
-7. `pnpm dev`
+5. Popular os segredos de dispatch (env-específicos) via `scripts/bootstrap-dispatch-secrets.sql`:
+   ```bash
+   psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" \
+     -v dispatch_url="'http://host.docker.internal:54321/functions/v1/process-enrichment-job'" \
+     -v dispatch_token="'<SUPABASE_SECRET_KEY local>'" \
+     -f scripts/bootstrap-dispatch-secrets.sql
+   ```
+   No prod, rode o mesmo script pelo Studio SQL editor substituindo `:dispatch_url` (`https://<project>.supabase.co/functions/v1/process-enrichment-job`) e `:dispatch_token` (service-role key). É idempotente — re-rodar atualiza o valor. Se algum segredo estiver ausente o trigger emite warning e o sweep de órfãos (15min) marca o job como failed.
+6. Create an operator via Studio (Auth → Add user)
+7. Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` e `NETRIN_TOKEN` in `.env.local`
+8. `pnpm dev`
 
 ### Adicionar um novo slug Netrin a um Hop existente
 

@@ -3,16 +3,17 @@ import type {
   ExtractedEdge,
   ExtractedGraph,
   ExtractedNode,
-} from '@/lib/graph/types';
-import { hashDocument } from '@/lib/hash';
-import { mask as maskCnpj } from '@/lib/validators/cnpj';
-import { mask as maskCpf } from '@/lib/validators/cpf';
-import type { NetrinCompositePayload, NetrinDocumentType } from './types';
+} from '@/lib/graph/types.ts';
+import { hashDocument } from '@/lib/hash.ts';
+import { mask as maskCnpj } from '@/lib/validators/cnpj.ts';
+import { mask as maskCpf } from '@/lib/validators/cpf.ts';
+import type { NetrinCompositePayload, NetrinDocumentType } from './types.ts';
 
 export type GraphBridgeInput = {
   rootDocument: { type: NetrinDocumentType; raw: string; name?: string };
   hop1Payload: NetrinCompositePayload | null;
   hop2Payloads: Record<string, NetrinCompositePayload>; // key: cnpj raw 14 dígitos
+  hop3Payloads?: Record<string, NetrinCompositePayload>; // key: cpf raw 11 dígitos
 };
 
 type Negocio = {
@@ -148,7 +149,17 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
     for (const item of list) {
       const cpfRaw = typeof item.cpf === 'string' ? item.cpf.replace(/\D/g, '') : '';
       if (cpfRaw.length !== 11) continue;
-      const socioNode = makeCpfNode(cpfRaw, typeof item.nome === 'string' ? item.nome : undefined);
+
+      let partnerName = typeof item.nome === 'string' ? item.nome : undefined;
+      const hop3Payload = input.hop3Payloads?.[cpfRaw];
+      if (hop3Payload) {
+        const espCpf = hop3Payload['esp-cpf'] as { nome?: string } | null | undefined;
+        if (typeof espCpf?.nome === 'string' && espCpf.nome.trim()) {
+          partnerName = espCpf.nome;
+        }
+      }
+
+      const socioNode = makeCpfNode(cpfRaw, partnerName);
       nodeMap.set(socioNode.nodeHash, socioNode);
       edges.push({
         sourceHash: cnpjHash,

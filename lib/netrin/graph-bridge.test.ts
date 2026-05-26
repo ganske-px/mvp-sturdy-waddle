@@ -71,6 +71,57 @@ describe('buildNetrinGraph', () => {
     expect(cnpjToCpf?.evidence.vinculo).toBe('SOCIO');
   });
 
+  it('enriches socio CPF node name from hop3Payloads esp-cpf when available', () => {
+    const result = buildNetrinGraph({
+      rootDocument: { type: 'cpf', raw: '12345678909' },
+      hop1Payload: {
+        'empresas-relacionadas-cpf': {
+          negociosRelacionados: [{ cnpj: '12345678000190', razaoSocial: 'ACME' }],
+        },
+      },
+      hop2Payloads: {
+        '12345678000190': {
+          'pessoas-relacionadas-cnpj': {
+            entidadesRelacionadas: [
+              { cpf: '98765432100', nome: 'MARIA APELIDO', vinculoDoRelacionamento: 'SOCIO' },
+            ],
+          },
+        },
+      },
+      hop3Payloads: {
+        '98765432100': {
+          'esp-cpf': { nome: 'MARIA OFICIAL DA SILVA' },
+        },
+      },
+    });
+
+    const mariaNode = result.nodes.find((n) => n.label.document === '98765432100');
+    expect(mariaNode?.label.name).toBe('MARIA OFICIAL DA SILVA');
+  });
+
+  it('falls back to hop2 nome when hop3 esp-cpf is missing or empty', () => {
+    const result = buildNetrinGraph({
+      rootDocument: { type: 'cpf', raw: '12345678909' },
+      hop1Payload: {
+        'empresas-relacionadas-cpf': {
+          negociosRelacionados: [{ cnpj: '12345678000190' }],
+        },
+      },
+      hop2Payloads: {
+        '12345678000190': {
+          'pessoas-relacionadas-cnpj': {
+            entidadesRelacionadas: [{ cpf: '98765432100', nome: 'MARIA FALLBACK' }],
+          },
+        },
+      },
+      hop3Payloads: {
+        '98765432100': { 'esp-cpf': { nome: '   ' } },
+      },
+    });
+    const mariaNode = result.nodes.find((n) => n.label.document === '98765432100');
+    expect(mariaNode?.label.name).toBe('MARIA FALLBACK');
+  });
+
   it('omits malformed cnpj/cpf rows silently', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cpf', raw: '12345678909' },
