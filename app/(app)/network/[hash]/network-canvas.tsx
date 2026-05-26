@@ -19,7 +19,14 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { findShortestPath } from '@/lib/graph/path';
-import type { NodeType } from '@/lib/graph/types';
+import type { NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
+
+/** True when the stored evidence comes from the process (co_party/client_lawyer/lawyer_lawyer) branch. */
+function isProcessEvidence(
+  ev: StoredEdgeEvidence,
+): ev is Extract<StoredEdgeEvidence, { occurrences: number }> {
+  return 'occurrences' in ev;
+}
 import type { GraphEdgeDto, GraphNodeDto, SubgraphDto } from './actions';
 import { FloatingEdge } from './floating-edge';
 import { NodeDetailPanel } from './node-detail-panel';
@@ -176,8 +183,10 @@ const EDGE_STYLES: Record<
 function classifyEdge(edge: GraphEdgeDto): EdgeStyleKind {
   if (edge.kind === 'client_lawyer') return 'client_lawyer';
   if (edge.kind === 'lawyer_lawyer') return 'lawyer_lawyer';
-  if (edge.evidence.samePolo === true) return 'co_party_same';
-  if (edge.evidence.samePolo === false) return 'co_party_opposed';
+  if (edge.kind === 'corporate_relation') return 'co_party_unknown';
+  if (isProcessEvidence(edge.evidence) && edge.evidence.samePolo === true) return 'co_party_same';
+  if (isProcessEvidence(edge.evidence) && edge.evidence.samePolo === false)
+    return 'co_party_opposed';
   return 'co_party_unknown';
 }
 
@@ -219,7 +228,7 @@ function computeLayout(
   for (const e of visibleEdges) {
     if (!g.hasNode(e.source) || !g.hasNode(e.target)) continue;
     if (e.source === e.target) continue;
-    const weight = Math.max(1, e.evidence.occurrences ?? 1);
+    const weight = Math.max(1, isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1);
     if (g.hasEdge(e.source, e.target)) {
       const cur = g.getEdgeAttribute(e.source, e.target, 'weight') ?? 1;
       g.setEdgeAttribute(e.source, e.target, 'weight', Math.max(cur, weight));
@@ -350,7 +359,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const maxOccurrences = useMemo(() => {
     let max = 1;
     for (const e of subgraph.edges) {
-      const w = e.evidence.occurrences ?? 1;
+      const w = isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1;
       if (w > max) max = w;
     }
     return max;
@@ -381,7 +390,8 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         (e) =>
           candidateHashes.has(e.source) &&
           candidateHashes.has(e.target) &&
-          (e.evidence.occurrences ?? 1) >= deferredMinOccurrences,
+          (isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1) >=
+            deferredMinOccurrences,
       ),
     [subgraph.edges, candidateHashes, deferredMinOccurrences],
   );
@@ -482,7 +492,10 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
       keptEdgeDtos.map((e, i) => {
         const kind = classifyEdge(e);
         const style = EDGE_STYLES[kind];
-        const widthBase = Math.min(5, 1 + (e.evidence.occurrences ?? 1) * 0.4);
+        const widthBase = Math.min(
+          5,
+          1 + (isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1) * 0.4,
+        );
         const onPath = spotlight?.kind === 'path' && spotlight.edges.has(i);
         const inHover = spotlight?.kind === 'hover' && spotlight.edges.has(i);
         const dimmed = spotlight !== null && !spotlight.edges.has(i);

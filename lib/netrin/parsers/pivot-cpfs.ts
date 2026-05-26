@@ -40,9 +40,7 @@ export function extractPivotCpfs(payload: NetrinCompositePayload): PivotCpf[] {
         ? item.vinculoDoRelacionamento
         : 'INDEFINIDO';
     const dataInicio =
-      typeof item.dataInicioRelacionamento === 'string'
-        ? item.dataInicioRelacionamento
-        : undefined;
+      typeof item.dataInicioRelacionamento === 'string' ? item.dataInicioRelacionamento : undefined;
     const dataFim =
       typeof item.dataFimRelacionamento === 'string' ? item.dataFimRelacionamento : undefined;
     const pct =

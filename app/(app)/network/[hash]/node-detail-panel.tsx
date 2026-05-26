@@ -3,10 +3,17 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ShortestPath } from '@/lib/graph/path';
+import type { StoredEdgeEvidence } from '@/lib/graph/types';
 import { ArrowRight, Eye, Layers, MapPin, Route, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { GraphEdgeDto, GraphNodeDto } from './actions';
+
+function isProcessEvidence(
+  ev: StoredEdgeEvidence,
+): ev is Extract<StoredEdgeEvidence, { occurrences: number }> {
+  return 'occurrences' in ev;
+}
 import { ExpandButton } from './expand-button';
 
 type Tab = 'visao' | 'comunidade' | 'caminhos';
@@ -47,7 +54,11 @@ function VisaoTab({
 }) {
   const incidentEdges = edges
     .filter((e) => e.source === node.hash || e.target === node.hash)
-    .sort((a, b) => (b.evidence.occurrences ?? 1) - (a.evidence.occurrences ?? 1));
+    .sort(
+      (a, b) =>
+        (isProcessEvidence(b.evidence) ? (b.evidence.occurrences ?? 1) : 1) -
+        (isProcessEvidence(a.evidence) ? (a.evidence.occurrences ?? 1) : 1),
+    );
 
   const linkToCenter = incidentEdges.filter(
     (e) =>
@@ -82,13 +93,13 @@ function VisaoTab({
                         : 'Advogado ↔ advogado'}
                   </span>
                   <span className="font-mono tabular-nums text-muted-foreground">
-                    {e.evidence.occurrences} proc.
+                    {isProcessEvidence(e.evidence) ? e.evidence.occurrences : null} proc.
                   </span>
                 </div>
-                {e.evidence.samePolo === true ? (
+                {isProcessEvidence(e.evidence) && e.evidence.samePolo === true ? (
                   <span className="text-[0.65rem] text-emerald-600">mesmo polo</span>
                 ) : null}
-                {e.evidence.samePolo === false ? (
+                {isProcessEvidence(e.evidence) && e.evidence.samePolo === false ? (
                   <span className="text-[0.65rem] text-red-600">polos opostos</span>
                 ) : null}
               </li>

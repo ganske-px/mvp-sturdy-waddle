@@ -56,13 +56,23 @@ export async function upsertGraph(
 
   const nodes_in = await encryptNodesBatched(client, nodes);
 
-  const edges_in = edges.map((e) => ({
-    source_hash: e.sourceHash,
-    target_hash: e.targetHash,
-    kind: e.kind,
-    process_number: e.evidence.processNumber,
-    same_polo: e.evidence.samePolo,
-  }));
+  const edges_in = edges.map((e) => {
+    if (e.kind === 'corporate_relation') {
+      return {
+        source_hash: e.sourceHash,
+        target_hash: e.targetHash,
+        kind: e.kind,
+        evidence: e.evidence,
+      };
+    }
+    return {
+      source_hash: e.sourceHash,
+      target_hash: e.targetHash,
+      kind: e.kind,
+      process_number: e.evidence.processNumber,
+      same_polo: e.evidence.samePolo,
+    };
+  });
 
   const { error } = await client.rpc('upsert_graph' as never, { nodes_in, edges_in } as never);
   if (error) throw new Error(`upsertGraph failed: ${error.message}`);

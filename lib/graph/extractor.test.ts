@@ -2,6 +2,13 @@ import { hashDocument } from '@/lib/hash';
 import type { PredictusProcess } from '@/lib/predictus/types';
 import { describe, expect, it } from 'vitest';
 import { extractGraph } from './extractor';
+import type { ExtractedEdge, ProcessEdgeEvidence } from './types';
+
+/** Narrow an ExtractedEdge to the process-evidence branch. */
+function processEvidence(e: ExtractedEdge): ProcessEdgeEvidence {
+  if (e.kind === 'corporate_relation') throw new Error('unexpected corporate_relation in test');
+  return e.evidence;
+}
 
 const HASH_CPF_A = hashDocument('cpf', '11144477735');
 const HASH_CPF_B = hashDocument('cpf', '52998224725');
@@ -40,7 +47,7 @@ describe('extractGraph', () => {
     expect(nodes.map((n) => n.nodeHash).sort()).toEqual([HASH_CPF_A, HASH_CPF_B].sort());
     expect(edges).toHaveLength(1);
     expect(edges[0]?.kind).toBe('co_party');
-    expect(edges[0]?.evidence.samePolo).toBe(false);
+    expect(edges[0] ? processEvidence(edges[0]).samePolo : undefined).toBe(false);
     expect((edges[0]?.sourceHash ?? '') < (edges[0]?.targetHash ?? '')).toBe(true);
   });
 
@@ -52,7 +59,7 @@ describe('extractGraph', () => {
       ]),
     ];
     const { edges } = extractGraph({ payload, searchedHash: HASH_CPF_A });
-    expect(edges[0]?.evidence.samePolo).toBe(true);
+    expect(edges[0] ? processEvidence(edges[0]).samePolo : undefined).toBe(true);
   });
 
   it('marks samePolo=null when either tipo is missing', () => {
@@ -63,7 +70,7 @@ describe('extractGraph', () => {
       ]),
     ];
     const { edges } = extractGraph({ payload, searchedHash: HASH_CPF_A });
-    expect(edges[0]?.evidence.samePolo).toBeNull();
+    expect(edges[0] ? processEvidence(edges[0]).samePolo : undefined).toBeNull();
   });
 
   it('treats a parte with CNPJ as nodeType cnpj', () => {
@@ -186,7 +193,7 @@ describe('extractGraph', () => {
     const { edges } = extractGraph({ payload, searchedHash: HASH_CPF_A });
     const coParty = edges.filter((e) => e.kind === 'co_party');
     expect(coParty).toHaveLength(2);
-    expect(coParty.map((e) => e.evidence.processNumber).sort()).toEqual(['P-1', 'P-2']);
+    expect(coParty.map((e) => processEvidence(e).processNumber).sort()).toEqual(['P-1', 'P-2']);
   });
 
   it('skips advogados block when partes list is empty', () => {
