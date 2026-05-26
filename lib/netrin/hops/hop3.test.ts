@@ -5,7 +5,8 @@ import { runHop3 } from './hop3';
 describe('runHop3', () => {
   it('audits and fetches reduced slug set; terminal (no pivots returned)', async () => {
     const auditSpy = vi.fn(async () => {});
-    const fetchSpy = vi.fn(async () => ({ 'esp-cpf': {} }));
+    // as never: mock payload shape needs a type assertion for vitest mocking
+    const fetchSpy = vi.fn(async () => ({ 'esp-cpf': {} } as never));
     const result = await runHop3({
       cpfRaw: '98765432100',
       cpfHash: 'cpf:hh',

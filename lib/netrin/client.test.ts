@@ -1,7 +1,7 @@
 // lib/netrin/client.test.ts
 import { describe, expect, it, vi } from 'vitest';
 import { NetrinClient } from './client';
-import { HOP1_SLUGS, NetrinError } from './types';
+import { CPF_SLUGS, NetrinError } from './types';
 
 function makeFetch(handler: (url: string) => Promise<Response> | Response) {
   return vi.fn(async (url: string | URL) => handler(url.toString()));
@@ -135,7 +135,7 @@ describe('NetrinClient.fetchComposta', () => {
     expect(err?.message ?? '').not.toContain('SUPER-SECRET-TKN');
   });
 
-  it('typechecks against the full HOP1 slug list', async () => {
+  it('typechecks against the full CPF_SLUGS list', async () => {
     const fetchImpl = makeFetch(() => new Response('{}', { status: 200 }));
     const client = new NetrinClient({
       baseUrl: 'https://api.netrin.com.br',
@@ -143,7 +143,7 @@ describe('NetrinClient.fetchComposta', () => {
       fetch: fetchImpl as unknown as typeof fetch,
     });
     await expect(
-      client.fetchComposta('cpf', '12345678909', [...HOP1_SLUGS]),
+      client.fetchComposta('cpf', '12345678909', [...CPF_SLUGS]),
     ).resolves.toBeDefined();
   });
 });

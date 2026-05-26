@@ -2,14 +2,14 @@
 
 export type NetrinDocumentType = 'cpf' | 'cnpj';
 
-export const HOP1_SLUGS = [
+export const CPF_SLUGS = [
   'pep-kyc-cpf',
   'empresas-relacionadas-cpf',
   'receita-federal-cpf-data-nascimento',
   'midias-consolidado',
 ] as const;
 
-export const HOP2_SLUGS = [
+export const CNPJ_SLUGS = [
   'esp-cnpj-completo',
   'receita-federal-cnpj',
   'receita-federal-cnpj-qsa',
@@ -23,6 +23,8 @@ export const HOP2_SLUGS = [
   'trabalho-escravo',
 ] as const;
 
+// Deprecated — kept until Tasks 2 (delete hop3.ts) and 8 (drop hop3 from graph-bridge) land.
+// At that point this const and its contribution to NetrinSlug can be removed.
 export const HOP3_SLUGS = [
   'esp-cpf',
   'pep-kyc-cpf',
@@ -32,8 +34,8 @@ export const HOP3_SLUGS = [
 ] as const;
 
 export type NetrinSlug =
-  | (typeof HOP1_SLUGS)[number]
-  | (typeof HOP2_SLUGS)[number]
+  | (typeof CPF_SLUGS)[number]
+  | (typeof CNPJ_SLUGS)[number]
   | (typeof HOP3_SLUGS)[number];
 
 export type NetrinCompositePayload = Partial<Record<NetrinSlug, unknown>>;

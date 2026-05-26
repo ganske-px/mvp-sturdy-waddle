@@ -1,7 +1,7 @@
 import type { AuditEvent } from '@/lib/audit.ts';
 import { extractPivotCnpjs } from '@/lib/netrin/parsers/pivot-cnpjs.ts';
 import {
-  HOP1_SLUGS,
+  CPF_SLUGS,
   type NetrinCompositePayload,
   type NetrinDocumentType,
   type NetrinSlug,
@@ -42,7 +42,7 @@ export async function runHop1(deps: RunHop1Deps): Promise<RunHop1Result> {
     userId: deps.userId,
     action: 'enrichment_call',
     documentHash: deps.documentHash,
-    metadata: { hop: 1, jobId: deps.jobId, slugs: [...HOP1_SLUGS] },
+    metadata: { hop: 1, jobId: deps.jobId, slugs: [...CPF_SLUGS] },
   });
 
   const cached = await deps.getCache(deps.documentHash);
@@ -50,7 +50,7 @@ export async function runHop1(deps: RunHop1Deps): Promise<RunHop1Result> {
     return { payload: cached.payload, pivotCnpjs: extractPivotCnpjs(cached.payload), cached: true };
   }
 
-  const payload = await deps.fetchComposta('cpf', deps.documentRaw, HOP1_SLUGS);
-  await deps.setCache(deps.documentHash, 'cpf', [...HOP1_SLUGS], payload);
+  const payload = await deps.fetchComposta('cpf', deps.documentRaw, CPF_SLUGS);
+  await deps.setCache(deps.documentHash, 'cpf', [...CPF_SLUGS], payload);
   return { payload, pivotCnpjs: extractPivotCnpjs(payload), cached: false };
 }

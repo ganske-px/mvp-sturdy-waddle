@@ -53,7 +53,8 @@ describe('runHop1', () => {
           },
         ],
       },
-    }));
+      // as never: mock payload uses friendly camelCase (CpfBirthdate), but Netrin returns snake_case; cast bridges the shape
+    } as never));
     const setSpy = vi.fn(async () => {});
     const result = await runHop1({
       documentRaw: '12345678909',
