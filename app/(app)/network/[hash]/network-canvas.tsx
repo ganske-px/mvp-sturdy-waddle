@@ -367,6 +367,12 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     return s;
   }, [visiblePairs, subgraph.center]);
 
+  // Se o nó selecionado sumiu por causa de um filtro, fecha o painel pra não
+  // mostrar dados de um nó que não está mais visível no canvas.
+  useEffect(() => {
+    if (selectedHash && !connectedHashes.has(selectedHash)) setSelectedHash(null);
+  }, [connectedHashes, selectedHash]);
+
   const visibleNeighbors = useMemo(
     () => subgraph.neighbors.filter((n) => connectedHashes.has(n.hash)),
     [subgraph.neighbors, connectedHashes],
@@ -659,7 +665,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         <NodeDetailPanel
           node={selectedNode}
           center={subgraph.center}
-          edges={subgraph.edges}
+          edges={typeFilteredEdges}
           pathStart={pathStart}
           pathStartNode={pathStartNode}
           path={path}

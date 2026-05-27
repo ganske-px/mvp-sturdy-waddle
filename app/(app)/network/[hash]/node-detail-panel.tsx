@@ -4,7 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { W_DIV } from '@/lib/graph/edge-weight';
 import type { ShortestPath } from '@/lib/graph/path';
-import type { CorporateEdgeEvidence, StoredEdgeEvidence } from '@/lib/graph/types';
+import type {
+  CorporateEdgeEvidence,
+  FamilyEdgeEvidence,
+  StoredEdgeEvidence,
+} from '@/lib/graph/types';
+import { relationshipLabel } from '@/lib/netrin/relationship-labels';
 import { ArrowRight, Eye, MapPin, Route, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -19,6 +24,27 @@ function isProcessEvidence(
 
 function isCorporateEvidence(ev: StoredEdgeEvidence): ev is CorporateEdgeEvidence {
   return 'vinculo' in ev;
+}
+
+function isFamilyEvidence(ev: StoredEdgeEvidence): ev is FamilyEdgeEvidence {
+  return 'tipoRelacionamento' in ev;
+}
+
+function edgeKindLabel(e: GraphEdgeDto): string {
+  switch (e.kind) {
+    case 'co_party':
+      return 'Co-parte';
+    case 'client_lawyer':
+      return 'Representação';
+    case 'lawyer_lawyer':
+      return 'Advogado ↔ advogado';
+    case 'corporate_relation':
+      return 'Vínculo societário';
+    case 'family_relation':
+      return isFamilyEvidence(e.evidence)
+        ? relationshipLabel(e.evidence.tipoRelacionamento)
+        : 'Vínculo familiar';
+  }
 }
 
 type Tab = 'visao' | 'caminhos';
@@ -57,11 +83,7 @@ function VisaoTab({
 }) {
   const incidentEdges = edges
     .filter((e) => e.source === node.hash || e.target === node.hash)
-    .sort(
-      (a, b) =>
-        (isProcessEvidence(b.evidence) ? (b.evidence.occurrences ?? 1) : 1) -
-        (isProcessEvidence(a.evidence) ? (a.evidence.occurrences ?? 1) : 1),
-    );
+    .sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1));
 
   const linkToCenter = incidentEdges.filter(
     (e) =>
@@ -106,15 +128,7 @@ function VisaoTab({
                 className="rounded-md border border-border/70 bg-muted/30 px-2 py-1.5 text-xs"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {e.kind === 'co_party'
-                      ? 'Co-parte'
-                      : e.kind === 'client_lawyer'
-                        ? 'Representação'
-                        : e.kind === 'lawyer_lawyer'
-                          ? 'Advogado ↔ advogado'
-                          : 'Vínculo societário'}
-                  </span>
+                  <span className="font-medium">{edgeKindLabel(e)}</span>
                   {isProcessEvidence(e.evidence) ? (
                     <span className="font-mono tabular-nums text-muted-foreground">
                       {e.evidence.occurrences} proc.
@@ -139,6 +153,11 @@ function VisaoTab({
                         {new Date(e.evidence.dataInicioRelacionamento).toLocaleDateString('pt-BR')}
                       </span>
                     ) : null}
+                  </div>
+                ) : null}
+                {isFamilyEvidence(e.evidence) && e.evidence.nivel ? (
+                  <div className="mt-0.5 text-[0.65rem] text-muted-foreground">
+                    {e.evidence.nivel}
                   </div>
                 ) : null}
               </li>
