@@ -3,6 +3,7 @@
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
 import { decryptLabel } from '@/lib/graph/label-crypto';
+import { buildPathResult } from '@/lib/graph/path-result';
 import type { EdgeKind, GraphNodeLabel, NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
 import { hashDocument } from '@/lib/hash';
 import { setCachedResults } from '@/lib/predictus/cache';
@@ -299,4 +300,53 @@ export async function navigateToNetwork(formData: FormData): Promise<void> {
   }
   // Stay on the same page; the header re-renders. We just no-op for invalid input.
   redirect(`/network/_invalid?q=${encodeURIComponent(value)}`);
+}
+
+export type PathBetweenDto = {
+  found: boolean;
+  nodes: GraphNodeDto[];
+  hops: number;
+};
+
+const PATH_EDGE_PAGE = 1000;
+
+async function fetchAllEdges(
+  supabase: ServerClient,
+): Promise<Array<{ source: string; target: string }>> {
+  const all: Array<{ source: string; target: string }> = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('graph_edges')
+      .select('source_hash, target_hash')
+      .range(from, from + PATH_EDGE_PAGE - 1)
+      .returns<Array<{ source_hash: string; target_hash: string }>>();
+    if (error) throw new Error(`fetchAllEdges failed: ${error.message}`);
+    const rows = data ?? [];
+    for (const r of rows) all.push({ source: r.source_hash, target: r.target_hash });
+    if (rows.length < PATH_EDGE_PAGE) break;
+    from += PATH_EDGE_PAGE;
+  }
+  return all;
+}
+
+export async function findPathBetween(hashA: string, hashB: string): Promise<PathBetweenDto> {
+  await requirePermission('search_network');
+  const admin = createAdminClient();
+  const supabase = await createClient();
+
+  const edges = await fetchAllEdges(supabase);
+  const path = buildPathResult(edges, hashA, hashB);
+  if (!path.found) return { found: false, nodes: [], hops: 0 };
+
+  const rows = await fetchNodesInChunks(supabase, path.nodes);
+  const byHash = new Map(rows.map((r) => [r.node_hash, r] as const));
+  const nowIso = new Date().toISOString();
+  const cacheHashes = await fetchFreshCacheHashes(supabase, path.nodes, nowIso);
+
+  // Preserva a ordem do caminho; ignora hashes sem nó (não deveria ocorrer).
+  const ordered = path.nodes.map((h) => byHash.get(h)).filter((r): r is NodeRow => r !== undefined);
+  const nodes = await rowsToDtosBatched(admin, ordered, cacheHashes);
+
+  return { found: true, nodes, hops: path.hops };
 }
