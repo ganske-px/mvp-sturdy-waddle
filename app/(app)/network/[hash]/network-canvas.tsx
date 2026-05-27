@@ -17,30 +17,35 @@ import ReactFlow, {
   useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import {
+  type ConsolidatedPair,
+  consolidatePairs,
+  nodeScale,
+  pairKey,
+  pairStrokeWidth,
+} from '@/lib/graph/edge-weight';
 import { findShortestPath } from '@/lib/graph/path';
 import type { NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
+import type { GraphEdgeDto, GraphNodeDto, SubgraphDto } from './actions';
+import { FloatingEdge } from './floating-edge';
+import { NodeDetailPanel } from './node-detail-panel';
 
-/** True when the stored evidence comes from the process (co_party/client_lawyer/lawyer_lawyer) branch. */
+/** True when the stored evidence comes from the process branch (has occurrences/samePolo). */
 function isProcessEvidence(
   ev: StoredEdgeEvidence,
 ): ev is Extract<StoredEdgeEvidence, { occurrences: number }> {
   return 'occurrences' in ev;
 }
-import type { GraphEdgeDto, GraphNodeDto, SubgraphDto } from './actions';
-import { FloatingEdge } from './floating-edge';
-import { NodeDetailPanel } from './node-detail-panel';
 
 type NodeData = {
   dto: GraphNodeDto;
   isCenter: boolean;
-  /** true when there's an active spotlight (hover/path) and this node is in it */
   inSpotlight: boolean;
-  /** true when a spotlight is active and this node is NOT in it */
   dimmed: boolean;
-  /** true when this node is part of the active path */
   onPath: boolean;
-  /** true when this node is the path origin */
   isPathStart: boolean;
+  /** Escala visual derivada da prominência do nó (peso persistido). */
+  scale: number;
 };
 
 const PATH_HIGHLIGHT = '#fbbf24'; // amber-400
@@ -48,8 +53,6 @@ const PATH_HIGHLIGHT = '#fbbf24'; // amber-400
 function nodeBoxShadow(data: NodeData): string | undefined {
   if (data.isPathStart) return `0 0 0 3px ${PATH_HIGHLIGHT}, 0 0 18px ${PATH_HIGHLIGHT}55`;
   if (data.onPath) return `0 0 0 2.5px ${PATH_HIGHLIGHT}`;
-  // Risco do próprio nó: anel vermelho. É a única sinalização de risco no canvas
-  // (a camada "âmbar a 2–3 saltos" vive no verdicto/cabeçalho, não por nó).
   if (data.dto.isPep || data.dto.hasSanction) return '0 0 0 3px #ef4444, 0 0 14px #ef444455';
   return undefined;
 }
@@ -66,13 +69,17 @@ function NodeShell({
   iconClass?: string;
 }) {
   const shadow = nodeBoxShadow(data);
+  // A prominência aumenta o tamanho do nó; o centro mantém destaque próprio.
+  const style: React.CSSProperties = {
+    transform: `scale(${data.scale})`,
+    transformOrigin: 'center',
+    ...(shadow ? { boxShadow: shadow } : {}),
+  };
   return (
     <div
       className={`transition-opacity ${baseClass} ${data.dimmed ? 'opacity-20' : 'opacity-100'}`}
-      style={shadow ? { boxShadow: shadow } : undefined}
+      style={style}
     >
-      {/* Invisible handles — floating edges derive endpoints from the node
-          geometry instead of these positions, so a single handle pair is fine. */}
       <Handle type="target" position={Position.Top} className="opacity-0" />
       <Icon className={`size-3 shrink-0 ${iconClass ?? ''}`} />
       <span className="truncate font-medium">{data.dto.label.name ?? data.dto.maskedPreview}</span>
@@ -91,8 +98,6 @@ function CpfNode({ data }: NodeProps<NodeData>) {
       data={data}
       Icon={User}
       iconClass="text-primary"
-      // Solid bg-card so edges that pass behind the node don't bleed through
-      // the label. Type colour lives in the border + icon instead.
       baseClass={`flex max-w-[160px] items-center gap-1.5 rounded-full bg-card shadow-sm ${sizing} ${border}`}
     />
   );
@@ -142,7 +147,8 @@ type EdgeStyleKind =
   | 'co_party_unknown'
   | 'client_lawyer'
   | 'lawyer_lawyer'
-  | 'corporate_relation';
+  | 'corporate_relation'
+  | 'family_relation';
 
 const EDGE_STYLES: Record<
   EdgeStyleKind,
@@ -154,50 +160,58 @@ const EDGE_STYLES: Record<
   client_lawyer: { stroke: '#0ea5e9', strokeDasharray: '6 4', label: 'Representação' },
   lawyer_lawyer: { stroke: '#7c3aed', strokeDasharray: '2 4', label: 'Advogado ↔ advogado' },
   corporate_relation: { stroke: '#1d4ed8', strokeDasharray: '4 3', label: 'Vínculo societário' },
+  family_relation: { stroke: '#db2777', strokeDasharray: '1 3', label: 'Parentesco' },
+};
+
+// Severidade para escolher a cor da aresta consolidada quando há vários tipos.
+const STYLE_RANK: Record<EdgeStyleKind, number> = {
+  co_party_opposed: 7,
+  corporate_relation: 6,
+  family_relation: 5,
+  co_party_same: 4,
+  client_lawyer: 3,
+  lawyer_lawyer: 2,
+  co_party_unknown: 1,
 };
 
 function classifyEdge(edge: GraphEdgeDto): EdgeStyleKind {
   if (edge.kind === 'client_lawyer') return 'client_lawyer';
   if (edge.kind === 'lawyer_lawyer') return 'lawyer_lawyer';
   if (edge.kind === 'corporate_relation') return 'corporate_relation';
+  if (edge.kind === 'family_relation') return 'family_relation';
   if (isProcessEvidence(edge.evidence) && edge.evidence.samePolo === true) return 'co_party_same';
   if (isProcessEvidence(edge.evidence) && edge.evidence.samePolo === false)
     return 'co_party_opposed';
   return 'co_party_unknown';
 }
 
-// Builds a graphology graph for the *visible* subset and runs ForceAtlas2 for
-// positions. Recomputed every time the visible set changes (type filter,
-// occurrences slider) so the remaining nodes spread into the freed space
-// instead of staying clustered where the old layout put them.
+/** Estilo dominante de um par = o de maior severidade entre suas arestas. */
+function dominantStyle(constituents: GraphEdgeDto[]): EdgeStyleKind {
+  return constituents
+    .map(classifyEdge)
+    .reduce(
+      (best, s) => (STYLE_RANK[s] > STYLE_RANK[best] ? s : best),
+      'co_party_unknown' as EdgeStyleKind,
+    );
+}
+
 function computeLayout(
   center: GraphNodeDto,
   visibleNeighbors: GraphNodeDto[],
-  visibleEdges: GraphEdgeDto[],
+  visiblePairs: ConsolidatedPair[],
 ): { positions: Map<string, { x: number; y: number }> } {
   const positions = new Map<string, { x: number; y: number }>();
-
   const g = new Graph({ multi: false, type: 'undirected' });
   g.addNode(center.hash);
   for (const n of visibleNeighbors) {
     if (!g.hasNode(n.hash)) g.addNode(n.hash);
   }
-
-  for (const e of visibleEdges) {
-    if (!g.hasNode(e.source) || !g.hasNode(e.target)) continue;
-    if (e.source === e.target) continue;
-    const weight = Math.max(1, isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1);
-    if (g.hasEdge(e.source, e.target)) {
-      const cur = g.getEdgeAttribute(e.source, e.target, 'weight') ?? 1;
-      g.setEdgeAttribute(e.source, e.target, 'weight', Math.max(cur, weight));
-    } else {
-      g.addEdge(e.source, e.target, { weight });
-    }
+  for (const p of visiblePairs) {
+    if (!g.hasNode(p.a) || !g.hasNode(p.b)) continue;
+    if (p.a === p.b) continue;
+    if (!g.hasEdge(p.a, p.b)) g.addEdge(p.a, p.b, { weight: Math.max(1, p.weight) });
   }
 
-  // Seed with a wide scatter so FA2 has gradient to work with even on small
-  // graphs — a tight initial cluster + low repulsion would otherwise leave
-  // 5-10 nodes piled on top of each other.
   const seedRadius = Math.max(400, g.order * 30);
   for (const node of g.nodes()) {
     if (node === center.hash) {
@@ -209,9 +223,6 @@ function computeLayout(
       g.setNodeAttribute(node, 'x', r * Math.cos(angle));
       g.setNodeAttribute(node, 'y', r * Math.sin(angle));
     }
-    // FA2's adjustSizes treats this as a half-width — set generously so dense
-    // labels don't end up overlapping. Real rendered width is ~120-160px so a
-    // size of ~70-90 keeps comfortable padding between nodes.
     g.setNodeAttribute(node, 'size', node === center.hash ? 90 : 70);
   }
 
@@ -220,9 +231,6 @@ function computeLayout(
     forceAtlas2.assign(g, {
       iterations,
       settings: {
-        // Higher scalingRatio + lower gravity stops a 5–10 node graph from
-        // collapsing into a single overlapping stack. linLogMode keeps the
-        // overall scale sane for both 10-node and 700-node subgraphs.
         gravity: 0.3,
         scalingRatio: 80,
         strongGravityMode: false,
@@ -230,19 +238,15 @@ function computeLayout(
         barnesHutTheta: 0.5,
         slowDown: 2,
         linLogMode: true,
-        // Distributes hubs to the periphery instead of clumping with their
-        // neighbours — gives the centre breathing room.
         outboundAttractionDistribution: true,
         adjustSizes: true,
-        edgeWeightInfluence: 0.5,
+        edgeWeightInfluence: 1, // pares mais pesados puxam mais forte
       },
     });
   } catch {
     // Fall back to the seeded scatter.
   }
 
-  // Translate so the centre node sits at (0, 0) — keeps the visual focus on
-  // the searched entity, matters when the user pans/zooms.
   const cx = (g.getNodeAttribute(center.hash, 'x') as number) ?? 0;
   const cy = (g.getNodeAttribute(center.hash, 'y') as number) ?? 0;
   for (const node of g.nodes()) {
@@ -251,14 +255,10 @@ function computeLayout(
       y: ((g.getNodeAttribute(node, 'y') as number) ?? 0) - cy,
     });
   }
-
   return { positions };
 }
 
 export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
-  // ReactFlowProvider is needed so InnerCanvas can call useReactFlow().fitView
-  // when filters change — without it the camera stays parked on the old layout
-  // extent and the new (smaller) graph just looks tiny in the middle.
   return (
     <ReactFlowProvider>
       <InnerCanvas subgraph={subgraph} />
@@ -272,32 +272,17 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [pathStart, setPathStart] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set());
   const [hiddenEdgeKinds, setHiddenEdgeKinds] = useState<Set<EdgeStyleKind>>(new Set());
-  const [minOccurrences, setMinOccurrences] = useState(1);
+  const [minWeight, setMinWeight] = useState(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // React Flow warns when nodeTypes is a new reference each render; with HMR
-  // a module-level const gets recreated on every Fast Refresh. Binding the
-  // map to the component instance via useMemo silences the false positive.
   const nodeTypes = useMemo(() => ({ cpf: CpfNode, cnpj: CnpjNode, lawyer: LawyerNode }), []);
   const edgeTypes = useMemo(() => ({ floating: FloatingEdge }), []);
   const fitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const reactFlow = useReactFlow();
 
-  // Defer the slider value so dragging through 100 stops doesn't kick off
-  // 100 force-layout runs; React will skip stale updates and only land on
-  // the value the user settles on (or an intermediate one as CPU frees up).
-  const deferredMinOccurrences = useDeferredValue(minOccurrences);
+  const deferredMinWeight = useDeferredValue(minWeight);
   const deferredHiddenTypes = useDeferredValue(hiddenTypes);
   const deferredHiddenEdgeKinds = useDeferredValue(hiddenEdgeKinds);
-
-  const maxOccurrences = useMemo(() => {
-    let max = 1;
-    for (const e of subgraph.edges) {
-      const w = isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1;
-      if (w > max) max = w;
-    }
-    return max;
-  }, [subgraph.edges]);
 
   const counts = useMemo(() => {
     const result: Record<NodeType, number> = { cpf: 0, cnpj: 0, lawyer: 0 };
@@ -305,10 +290,6 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     return result;
   }, [subgraph.neighbors]);
 
-  // Visibility composes left-to-right: type filter narrows candidates, the
-  // occurrences slider keeps only strong edges, then any candidate left with
-  // no surviving edge to the rest of the visible graph is dropped — otherwise
-  // raising the slider would leave orphan nodes floating around.
   const candidateHashes = useMemo(() => {
     const s = new Set<string>();
     if (subgraph.center) s.add(subgraph.center.hash);
@@ -318,76 +299,110 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     return s;
   }, [subgraph.center, subgraph.neighbors, deferredHiddenTypes]);
 
-  const keptEdgeDtos = useMemo(
+  // Arestas cruas que sobrevivem ao filtro de tipo de nó e de tipo de relação.
+  const typeFilteredEdges = useMemo(
     () =>
       subgraph.edges.filter(
         (e) =>
           candidateHashes.has(e.source) &&
           candidateHashes.has(e.target) &&
-          !deferredHiddenEdgeKinds.has(classifyEdge(e)) &&
-          (isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1) >=
-            deferredMinOccurrences,
+          !deferredHiddenEdgeKinds.has(classifyEdge(e)),
       ),
-    [subgraph.edges, candidateHashes, deferredHiddenEdgeKinds, deferredMinOccurrences],
+    [subgraph.edges, candidateHashes, deferredHiddenEdgeKinds],
+  );
+
+  // Constituintes por par (para cor dominante e drill-down no painel).
+  const constituentsByPair = useMemo(() => {
+    const m = new Map<string, GraphEdgeDto[]>();
+    for (const e of typeFilteredEdges) {
+      const key = pairKey(e.source, e.target);
+      const arr = m.get(key) ?? [];
+      arr.push(e);
+      m.set(key, arr);
+    }
+    return m;
+  }, [typeFilteredEdges]);
+
+  const allPairs = useMemo(
+    () =>
+      consolidatePairs(
+        typeFilteredEdges.map((e) => ({
+          source: e.source,
+          target: e.target,
+          kind: e.kind,
+          weight: e.weight,
+        })),
+      ),
+    [typeFilteredEdges],
+  );
+
+  const maxWeight = useMemo(() => {
+    let max = 1;
+    for (const p of allPairs.values()) if (p.weight > max) max = p.weight;
+    return Math.ceil(max);
+  }, [allPairs]);
+
+  // Pares que sobrevivem ao slider de força.
+  const visiblePairs = useMemo(
+    () => [...allPairs.values()].filter((p) => p.weight >= deferredMinWeight),
+    [allPairs, deferredMinWeight],
   );
 
   const connectedHashes = useMemo(() => {
     const s = new Set<string>();
     if (subgraph.center) s.add(subgraph.center.hash);
-    for (const e of keptEdgeDtos) {
-      s.add(e.source);
-      s.add(e.target);
+    for (const p of visiblePairs) {
+      s.add(p.a);
+      s.add(p.b);
     }
     return s;
-  }, [keptEdgeDtos, subgraph.center]);
+  }, [visiblePairs, subgraph.center]);
 
   const visibleNeighbors = useMemo(
     () => subgraph.neighbors.filter((n) => connectedHashes.has(n.hash)),
     [subgraph.neighbors, connectedHashes],
   );
 
-  // Recompute layout on every change to the visible subset, so the remaining
-  // nodes spread into the freed space.
   const { positions } = useMemo(() => {
-    if (!subgraph.center) {
-      return { positions: new Map<string, { x: number; y: number }>() };
-    }
-    return computeLayout(subgraph.center, visibleNeighbors, keptEdgeDtos);
-  }, [subgraph.center, visibleNeighbors, keptEdgeDtos]);
+    if (!subgraph.center) return { positions: new Map<string, { x: number; y: number }>() };
+    return computeLayout(subgraph.center, visibleNeighbors, visiblePairs);
+  }, [subgraph.center, visibleNeighbors, visiblePairs]);
 
-  // Shortest path: only computed when both endpoints are set and distinct.
-  // Runs on the *visible* edges so the path respects active filters — if the
-  // user raised the slider so the path no longer exists, they see "no path".
+  // Caminho mais curto roda sobre os pares visíveis (um "edge" por par).
+  const pathEdges = useMemo(
+    () => visiblePairs.map((p) => ({ source: p.a, target: p.b })),
+    [visiblePairs],
+  );
   const path = useMemo(() => {
     if (!pathStart || !selectedHash || pathStart === selectedHash) return null;
-    return findShortestPath(keptEdgeDtos, pathStart, selectedHash);
-  }, [pathStart, selectedHash, keptEdgeDtos]);
+    return findShortestPath(pathEdges, pathStart, selectedHash);
+  }, [pathStart, selectedHash, pathEdges]);
 
-  // Spotlight: when a path is active, that's the focus; otherwise hover.
-  // Used to dim everything outside the focus.
   const spotlight = useMemo(() => {
     const nodes = new Set<string>();
-    const edges = new Set<number>();
+    const edges = new Set<string>(); // por pairKey
     if (path) {
       for (const h of path.nodes) nodes.add(h);
-      for (const i of path.edgeIndices) edges.add(i);
+      for (let i = 0; i < path.nodes.length - 1; i++) {
+        const a = path.nodes[i];
+        const b = path.nodes[i + 1];
+        if (a && b) edges.add(pairKey(a, b));
+      }
       return { nodes, edges, kind: 'path' as const };
     }
     if (hoveredHash) {
       nodes.add(hoveredHash);
-      for (let i = 0; i < keptEdgeDtos.length; i++) {
-        const e = keptEdgeDtos[i];
-        if (!e) continue;
-        if (e.source === hoveredHash || e.target === hoveredHash) {
-          edges.add(i);
-          nodes.add(e.source);
-          nodes.add(e.target);
+      for (const p of visiblePairs) {
+        if (p.a === hoveredHash || p.b === hoveredHash) {
+          edges.add(pairKey(p.a, p.b));
+          nodes.add(p.a);
+          nodes.add(p.b);
         }
       }
       return { nodes, edges, kind: 'hover' as const };
     }
     return null;
-  }, [path, hoveredHash, keptEdgeDtos]);
+  }, [path, hoveredHash, visiblePairs]);
 
   const pathNodesByHash = useMemo(() => {
     const m = new Map<string, GraphNodeDto>();
@@ -407,30 +422,30 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
 
   const finalEdges = useMemo<Edge[]>(
     () =>
-      keptEdgeDtos.map((e, i) => {
-        const kind = classifyEdge(e);
-        const style = EDGE_STYLES[kind];
-        const widthBase = Math.min(
-          5,
-          1 + (isProcessEvidence(e.evidence) ? (e.evidence.occurrences ?? 1) : 1) * 0.4,
-        );
-        const onPath = spotlight?.kind === 'path' && spotlight.edges.has(i);
-        const inHover = spotlight?.kind === 'hover' && spotlight.edges.has(i);
-        const dimmed = spotlight !== null && !spotlight.edges.has(i);
+      visiblePairs.map((p) => {
+        const key = pairKey(p.a, p.b);
+        const constituents = constituentsByPair.get(key) ?? [];
+        const styleKind = dominantStyle(constituents);
+        const style = EDGE_STYLES[styleKind];
+        const widthBase = pairStrokeWidth(p.weight, p.diversity);
+        const onPath = spotlight?.kind === 'path' && spotlight.edges.has(key);
+        const inHover = spotlight?.kind === 'hover' && spotlight.edges.has(key);
+        const dimmed = spotlight !== null && !spotlight.edges.has(key);
         return {
-          id: `e-${i}`,
-          source: e.source,
-          target: e.target,
+          id: key,
+          source: p.a,
+          target: p.b,
           type: 'floating',
+          // Pares multi-tipo nunca tracejam (linha cheia = vínculo "forte/denso").
           style: {
             stroke: onPath ? PATH_HIGHLIGHT : style.stroke,
-            strokeDasharray: onPath ? undefined : style.strokeDasharray,
+            strokeDasharray: onPath || p.diversity > 1 ? undefined : style.strokeDasharray,
             strokeWidth: onPath ? widthBase + 1.5 : widthBase,
             opacity: dimmed ? 0.08 : inHover || onPath ? 1 : 0.7,
           },
         };
       }),
-    [keptEdgeDtos, spotlight],
+    [visiblePairs, constituentsByPair, spotlight],
   );
 
   const finalNodes = useMemo<Node<NodeData>[]>(() => {
@@ -452,14 +467,12 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
           dimmed,
           onPath,
           isPathStart: n.hash === pathStart,
+          scale: n.hash === subgraph.center?.hash ? 1 : nodeScale(n.weight),
         },
       };
     });
   }, [subgraph.center, visibleNeighbors, positions, spotlight, pathStart]);
 
-  // Re-fit the camera whenever the visible set changes. The layout has new
-  // positions but the viewport would otherwise stay parked on the old
-  // extent — leaving the remaining nodes huddled in one corner.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reactFlow.fitView is stable across renders
   useEffect(() => {
     const id = requestAnimationFrame(() => {
@@ -538,7 +551,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
           </button>
           <span className="ml-auto text-muted-foreground">
             mostrando {visibleNeighbors.length} de {subgraph.neighbors.length} vizinhos ·{' '}
-            {finalEdges.length} de {subgraph.edges.length} conexões
+            {finalEdges.length} vínculo(s)
           </span>
         </div>
 
@@ -562,20 +575,18 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
                 />
                 Societário
               </button>
-              <label className="flex items-center gap-2 text-muted-foreground" htmlFor="min-occ">
-                Vínculos ≥
+              <label className="flex items-center gap-2 text-muted-foreground" htmlFor="min-weight">
+                Força ≥
                 <input
-                  id="min-occ"
+                  id="min-weight"
                   type="range"
                   min={1}
-                  max={Math.max(1, maxOccurrences)}
-                  value={minOccurrences}
-                  onChange={(e) => setMinOccurrences(Number(e.target.value))}
+                  max={Math.max(1, maxWeight)}
+                  value={minWeight}
+                  onChange={(e) => setMinWeight(Number(e.target.value))}
                   className="w-48 accent-primary"
                 />
-                <span className="font-mono text-foreground">
-                  {minOccurrences} processo{minOccurrences === 1 ? '' : 's'}
-                </span>
+                <span className="font-mono text-foreground">{minWeight}</span>
               </label>
             </div>
 
@@ -601,6 +612,10 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
                   {s.label}
                 </span>
               ))}
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="inline-block h-[3px] w-6 rounded bg-foreground" />
+                linha mais grossa = vínculo mais forte
+              </span>
             </div>
           </>
         ) : null}
@@ -616,6 +631,12 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
             onNodeClick={(_, n) => setSelectedHash(n.id)}
             onNodeMouseEnter={(_, n) => setHoveredHash(n.id)}
             onNodeMouseLeave={() => setHoveredHash(null)}
+            onEdgeClick={(_, edge) => {
+              // Selecionar a aresta abre o detalhe do par no painel: escolhe o
+              // endpoint que não é o centro (ou a origem) para focar o vínculo.
+              const other = edge.source === subgraph.center?.hash ? edge.target : edge.source;
+              setSelectedHash(other);
+            }}
             onPaneClick={() => setHoveredHash(null)}
             fitView
             fitViewOptions={fitViewOptions}
