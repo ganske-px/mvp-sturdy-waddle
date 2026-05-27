@@ -30,6 +30,8 @@ export type GraphNodeDto = {
   type: NodeType;
   label: GraphNodeLabel;
   maskedPreview: string;
+  isPep: boolean;
+  hasSanction: boolean;
   inCache: boolean;
   lastSeenAt: string;
 };
@@ -53,6 +55,8 @@ type NodeRow = {
   node_type: NodeType;
   encrypted_label: string;
   masked_preview: string;
+  is_pep: boolean;
+  has_sanction: boolean;
   last_seen_at: string;
 };
 
@@ -74,7 +78,9 @@ async function fetchNodesInChunks(supabase: ServerClient, hashes: string[]): Pro
     const chunk = hashes.slice(i, i + HASH_QUERY_BATCH);
     const { data, error } = await supabase
       .from('graph_nodes')
-      .select('node_hash, node_type, encrypted_label, masked_preview, last_seen_at')
+      .select(
+        'node_hash, node_type, encrypted_label, masked_preview, last_seen_at, is_pep, has_sanction',
+      )
       .in('node_hash', chunk)
       .returns<NodeRow[]>();
     if (error) throw new Error(`fetchNodesInChunks failed: ${error.message}`);
@@ -121,6 +127,8 @@ async function rowToDto(
     type: row.node_type,
     label,
     maskedPreview: row.masked_preview,
+    isPep: row.is_pep,
+    hasSanction: row.has_sanction,
     inCache: row.node_type !== 'lawyer' && cacheHashes.has(row.node_hash),
     lastSeenAt: row.last_seen_at,
   };
@@ -147,7 +155,9 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
 
   const { data: centerRow } = await supabase
     .from('graph_nodes')
-    .select('node_hash, node_type, encrypted_label, masked_preview, last_seen_at')
+    .select(
+      'node_hash, node_type, encrypted_label, masked_preview, last_seen_at, is_pep, has_sanction',
+    )
     .eq('node_hash', centerHash)
     .maybeSingle()
     .returns<NodeRow>();

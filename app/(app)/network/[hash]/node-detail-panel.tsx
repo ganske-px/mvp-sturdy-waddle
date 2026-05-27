@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ShortestPath } from '@/lib/graph/path';
 import type { CorporateEdgeEvidence, StoredEdgeEvidence } from '@/lib/graph/types';
-import { ArrowRight, Eye, Layers, MapPin, Route, X } from 'lucide-react';
+import { ArrowRight, Eye, MapPin, Route, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { GraphEdgeDto, GraphNodeDto } from './actions';
@@ -20,17 +20,15 @@ function isCorporateEvidence(ev: StoredEdgeEvidence): ev is CorporateEdgeEvidenc
 }
 import { ExpandButton } from './expand-button';
 
-type Tab = 'visao' | 'comunidade' | 'caminhos';
+type Tab = 'visao' | 'caminhos';
 
 const TAB_LABEL: Record<Tab, string> = {
   visao: 'Visão',
-  comunidade: 'Comunidade',
   caminhos: 'Caminhos',
 };
 
 const TAB_ICON: Record<Tab, typeof Eye> = {
   visao: Eye,
-  comunidade: Layers,
   caminhos: Route,
 };
 
@@ -149,57 +147,6 @@ function VisaoTab({
   );
 }
 
-function ComunidadeTab({
-  node,
-  community,
-  membersInSameCommunity,
-  onPickNode,
-}: {
-  node: GraphNodeDto;
-  community: number;
-  membersInSameCommunity: GraphNodeDto[];
-  onPickNode: (hash: string) => void;
-}) {
-  if (community < 0) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Esse nó não pertence a uma comunidade densa identificada. Comunidades aparecem quando há
-        clusters de vínculos repetidos.
-      </p>
-    );
-  }
-  const others = membersInSameCommunity.filter((m) => m.hash !== node.hash);
-  return (
-    <div className="flex flex-col gap-3 text-sm">
-      <p className="text-xs text-muted-foreground">
-        Faz parte de uma comunidade com{' '}
-        <span className="font-mono tabular-nums">{membersInSameCommunity.length}</span> nós.
-      </p>
-      {others.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Único membro visível da comunidade.</p>
-      ) : (
-        <ul className="max-h-80 space-y-1 overflow-y-auto">
-          {others.slice(0, 30).map((m) => (
-            <li key={m.hash}>
-              <button
-                type="button"
-                onClick={() => onPickNode(m.hash)}
-                className="flex w-full items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted"
-              >
-                <span className="truncate">{m.label.name ?? m.maskedPreview}</span>
-                <span className="text-[0.65rem] uppercase text-muted-foreground">{m.type}</span>
-              </button>
-            </li>
-          ))}
-          {others.length > 30 ? (
-            <li className="text-xs text-muted-foreground">… e mais {others.length - 30}</li>
-          ) : null}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 function CaminhosTab({
   node,
   center,
@@ -306,6 +253,8 @@ function CaminhosTab({
                       type: 'cpf' as const,
                       label: {},
                       maskedPreview: hash.slice(0, 12),
+                      isPep: false,
+                      hasSanction: false,
                       inCache: false,
                       lastSeenAt: '',
                     });
@@ -337,8 +286,6 @@ export function NodeDetailPanel({
   node,
   center,
   edges,
-  community,
-  membersInSameCommunity,
   pathStart,
   pathStartNode,
   path,
@@ -350,8 +297,6 @@ export function NodeDetailPanel({
   node: GraphNodeDto | null;
   center: GraphNodeDto;
   edges: GraphEdgeDto[];
-  community: number;
-  membersInSameCommunity: GraphNodeDto[];
   pathStart: string | null;
   pathStartNode: GraphNodeDto | null;
   path: ShortestPath | null;
@@ -391,7 +336,7 @@ export function NodeDetailPanel({
         </span>
       </CardHeader>
       <div className="flex border-b border-border px-3">
-        {(['visao', 'comunidade', 'caminhos'] as const).map((t) => {
+        {(['visao', 'caminhos'] as const).map((t) => {
           const Icon = TAB_ICON[t];
           const active = tab === t;
           return (
@@ -413,14 +358,6 @@ export function NodeDetailPanel({
       </div>
       <CardContent className="pt-4">
         {tab === 'visao' ? <VisaoTab node={node} center={center} edges={edges} /> : null}
-        {tab === 'comunidade' ? (
-          <ComunidadeTab
-            node={node}
-            community={community}
-            membersInSameCommunity={membersInSameCommunity}
-            onPickNode={onPickNode}
-          />
-        ) : null}
         {tab === 'caminhos' ? (
           <CaminhosTab
             node={node}

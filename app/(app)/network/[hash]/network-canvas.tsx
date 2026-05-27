@@ -1,7 +1,6 @@
 'use client';
 
 import Graph from 'graphology';
-import louvain from 'graphology-communities-louvain';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import { Building2, Filter, Scale, User } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
@@ -34,8 +33,6 @@ import { NodeDetailPanel } from './node-detail-panel';
 type NodeData = {
   dto: GraphNodeDto;
   isCenter: boolean;
-  isHub: boolean;
-  community: number;
   /** true when there's an active spotlight (hover/path) and this node is in it */
   inSpotlight: boolean;
   /** true when a spotlight is active and this node is NOT in it */
@@ -46,37 +43,14 @@ type NodeData = {
   isPathStart: boolean;
 };
 
-// Stable palette for community accent rings. Cycles if there are more
-// communities than colours — a noisy outcome but not incorrect.
-const COMMUNITY_COLORS = [
-  '#0ea5e9', // sky
-  '#f97316', // orange
-  '#a855f7', // purple
-  '#eab308', // yellow
-  '#10b981', // emerald
-  '#ec4899', // pink
-  '#6366f1', // indigo
-  '#14b8a6', // teal
-  '#f43f5e', // rose
-  '#84cc16', // lime
-];
-
-function communityColor(id: number): string {
-  if (id < 0) return '#71717a';
-  return COMMUNITY_COLORS[id % COMMUNITY_COLORS.length] ?? '#71717a';
-}
-
 const PATH_HIGHLIGHT = '#fbbf24'; // amber-400
 
 function nodeBoxShadow(data: NodeData): string | undefined {
-  // Path origin gets a bright amber halo so it stays anchored visually.
   if (data.isPathStart) return `0 0 0 3px ${PATH_HIGHLIGHT}, 0 0 18px ${PATH_HIGHLIGHT}55`;
-  // Other nodes on the path: amber ring.
   if (data.onPath) return `0 0 0 2.5px ${PATH_HIGHLIGHT}`;
-  // Hubs (top-5 by weighted degree) wear their community colour — the only
-  // place community colour appears, so it never competes with type colour
-  // on every node.
-  if (data.isHub) return `0 0 0 3px ${communityColor(data.community)}`;
+  // Risco do próprio nó: anel vermelho. É a única sinalização de risco no canvas
+  // (a camada "âmbar a 2–3 saltos" vive no verdicto/cabeçalho, não por nó).
+  if (data.dto.isPep || data.dto.hasSanction) return '0 0 0 3px #ef4444, 0 0 14px #ef444455';
   return undefined;
 }
 
@@ -192,34 +166,16 @@ function classifyEdge(edge: GraphEdgeDto): EdgeStyleKind {
   return 'co_party_unknown';
 }
 
-const MAX_HUBS = 5;
-
-// Scale the number of "hubs" highlighted to the visible neighbour count so
-// sparse views don't end up with most nodes ringed in community colour. With
-// just 8 neighbours every node was being flagged a hub — visual noise instead
-// of signal.
-function hubBudget(neighbourCount: number): number {
-  if (neighbourCount < 6) return 0;
-  return Math.min(MAX_HUBS, Math.floor((neighbourCount - 5) / 3));
-}
-
-// Builds a graphology graph for the *visible* subset, runs Louvain for
-// community assignment, then ForceAtlas2 for positions. Recomputed every
-// time the visible set changes (type filter, occurrences slider) so the
-// remaining nodes spread into the freed space instead of staying clustered
-// where the old layout put them.
+// Builds a graphology graph for the *visible* subset and runs ForceAtlas2 for
+// positions. Recomputed every time the visible set changes (type filter,
+// occurrences slider) so the remaining nodes spread into the freed space
+// instead of staying clustered where the old layout put them.
 function computeLayout(
   center: GraphNodeDto,
   visibleNeighbors: GraphNodeDto[],
   visibleEdges: GraphEdgeDto[],
-): {
-  positions: Map<string, { x: number; y: number }>;
-  communityById: Map<string, number>;
-  hubSet: Set<string>;
-} {
+): { positions: Map<string, { x: number; y: number }> } {
   const positions = new Map<string, { x: number; y: number }>();
-  const communityById = new Map<string, number>();
-  const hubSet = new Set<string>();
 
   const g = new Graph({ multi: false, type: 'undirected' });
   g.addNode(center.hash);
@@ -259,16 +215,6 @@ function computeLayout(
     g.setNodeAttribute(node, 'size', node === center.hash ? 90 : 70);
   }
 
-  try {
-    louvain.assign(g, { getEdgeWeight: 'weight' });
-    for (const node of g.nodes()) {
-      const c = g.getNodeAttribute(node, 'community') as number | undefined;
-      if (typeof c === 'number') communityById.set(node, c);
-    }
-  } catch {
-    // Louvain can throw on degenerate graphs; carry on without communities.
-  }
-
   const iterations = Math.min(300, Math.max(120, g.order * 3));
   try {
     forceAtlas2.assign(g, {
@@ -306,24 +252,7 @@ function computeLayout(
     });
   }
 
-  const weightedDegree = new Map<string, number>();
-  for (const node of g.nodes()) {
-    let total = 0;
-    g.forEachEdge(node, (_e, attrs) => {
-      total += (attrs.weight as number) ?? 1;
-    });
-    weightedDegree.set(node, total);
-  }
-  const budget = hubBudget(visibleNeighbors.length);
-  if (budget > 0) {
-    const ranked = [...weightedDegree.entries()]
-      .filter(([h]) => h !== center.hash)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, budget);
-    for (const [h] of ranked) hubSet.add(h);
-  }
-
-  return { positions, communityById, hubSet };
+  return { positions };
 }
 
 export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
@@ -344,6 +273,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set());
   const [hiddenEdgeKinds, setHiddenEdgeKinds] = useState<Set<EdgeStyleKind>>(new Set());
   const [minOccurrences, setMinOccurrences] = useState(1);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // React Flow warns when nodeTypes is a new reference each render; with HMR
   // a module-level const gets recreated on every Fast Refresh. Binding the
@@ -416,15 +346,11 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     [subgraph.neighbors, connectedHashes],
   );
 
-  // Recompute layout + communities + hubs on every change to the visible
-  // subset, so the remaining nodes spread into the freed space.
-  const { positions, communityById, hubSet } = useMemo(() => {
+  // Recompute layout on every change to the visible subset, so the remaining
+  // nodes spread into the freed space.
+  const { positions } = useMemo(() => {
     if (!subgraph.center) {
-      return {
-        positions: new Map<string, { x: number; y: number }>(),
-        communityById: new Map<string, number>(),
-        hubSet: new Set<string>(),
-      };
+      return { positions: new Map<string, { x: number; y: number }>() };
     }
     return computeLayout(subgraph.center, visibleNeighbors, keptEdgeDtos);
   }, [subgraph.center, visibleNeighbors, keptEdgeDtos]);
@@ -479,19 +405,6 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         ? subgraph.center
         : (subgraph.neighbors.find((n) => n.hash === selectedHash) ?? null);
 
-  const selectedCommunity = selectedHash ? (communityById.get(selectedHash) ?? -1) : -1;
-  const membersInSameCommunity = useMemo(() => {
-    if (selectedCommunity < 0) return [];
-    const out: GraphNodeDto[] = [];
-    if (subgraph.center && communityById.get(subgraph.center.hash) === selectedCommunity) {
-      out.push(subgraph.center);
-    }
-    for (const n of visibleNeighbors) {
-      if (communityById.get(n.hash) === selectedCommunity) out.push(n);
-    }
-    return out;
-  }, [selectedCommunity, subgraph.center, visibleNeighbors, communityById]);
-
   const finalEdges = useMemo<Edge[]>(
     () =>
       keptEdgeDtos.map((e, i) => {
@@ -535,8 +448,6 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         data: {
           dto: n,
           isCenter: n.hash === subgraph.center?.hash,
-          isHub: hubSet.has(n.hash),
-          community: communityById.get(n.hash) ?? -1,
           inSpotlight,
           dimmed,
           onPath,
@@ -544,7 +455,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         },
       };
     });
-  }, [subgraph.center, visibleNeighbors, positions, communityById, hubSet, spotlight, pathStart]);
+  }, [subgraph.center, visibleNeighbors, positions, spotlight, pathStart]);
 
   // Re-fit the camera whenever the visible set changes. The layout has new
   // positions but the viewport would otherwise stay parked on the old
@@ -617,74 +528,82 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
               </button>
             );
           })}
-          <span className="mx-1 text-border">|</span>
-          <span className="text-muted-foreground">Relações</span>
           <button
             type="button"
-            onClick={() => toggleEdgeKind('corporate_relation')}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors ${
-              hiddenEdgeKinds.has('corporate_relation')
-                ? 'border-border bg-transparent text-muted-foreground line-through'
-                : 'border-foreground/20 bg-foreground/5 text-foreground'
-            }`}
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-foreground/20 bg-foreground/5 px-2.5 py-1 text-foreground"
           >
-            <span
-              aria-hidden
-              className="inline-block h-[2px] w-4 rounded"
-              style={{ backgroundColor: EDGE_STYLES.corporate_relation.stroke }}
-            />
-            Societário
+            <Filter className="size-3" />
+            Filtros {showAdvanced ? '▾' : '▸'}
           </button>
           <span className="ml-auto text-muted-foreground">
-            {hubSet.size > 0 ? `${hubSet.size} hubs destacados` : null}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <label className="flex items-center gap-2 text-muted-foreground" htmlFor="min-occ">
-            Vínculos ≥
-            <input
-              id="min-occ"
-              type="range"
-              min={1}
-              max={Math.max(1, maxOccurrences)}
-              value={minOccurrences}
-              onChange={(e) => setMinOccurrences(Number(e.target.value))}
-              className="w-48 accent-primary"
-            />
-            <span className="font-mono text-foreground">
-              {minOccurrences} processo{minOccurrences === 1 ? '' : 's'}
-            </span>
-          </label>
-          <span className="text-muted-foreground">
             mostrando {visibleNeighbors.length} de {subgraph.neighbors.length} vizinhos ·{' '}
             {finalEdges.length} de {subgraph.edges.length} conexões
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-2 text-[0.7rem] text-muted-foreground">
-          <span className="font-medium uppercase tracking-wider">Legenda</span>
-          {(
-            Object.entries(EDGE_STYLES) as Array<
-              [EdgeStyleKind, (typeof EDGE_STYLES)[EdgeStyleKind]]
-            >
-          ).map(([k, s]) => (
-            <span key={k} className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="inline-block h-[2px] w-6"
-                style={
-                  s.strokeDasharray
-                    ? {
-                        backgroundImage: `repeating-linear-gradient(90deg, ${s.stroke} 0 4px, transparent 4px 8px)`,
-                      }
-                    : { backgroundColor: s.stroke }
-                }
-              />
-              {s.label}
-            </span>
-          ))}
-        </div>
+        {showAdvanced ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Relações</span>
+              <button
+                type="button"
+                onClick={() => toggleEdgeKind('corporate_relation')}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors ${
+                  hiddenEdgeKinds.has('corporate_relation')
+                    ? 'border-border bg-transparent text-muted-foreground line-through'
+                    : 'border-foreground/20 bg-foreground/5 text-foreground'
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className="inline-block h-[2px] w-4 rounded"
+                  style={{ backgroundColor: EDGE_STYLES.corporate_relation.stroke }}
+                />
+                Societário
+              </button>
+              <label className="flex items-center gap-2 text-muted-foreground" htmlFor="min-occ">
+                Vínculos ≥
+                <input
+                  id="min-occ"
+                  type="range"
+                  min={1}
+                  max={Math.max(1, maxOccurrences)}
+                  value={minOccurrences}
+                  onChange={(e) => setMinOccurrences(Number(e.target.value))}
+                  className="w-48 accent-primary"
+                />
+                <span className="font-mono text-foreground">
+                  {minOccurrences} processo{minOccurrences === 1 ? '' : 's'}
+                </span>
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-2 text-[0.7rem] text-muted-foreground">
+              <span className="font-medium uppercase tracking-wider">Legenda</span>
+              {(
+                Object.entries(EDGE_STYLES) as Array<
+                  [EdgeStyleKind, (typeof EDGE_STYLES)[EdgeStyleKind]]
+                >
+              ).map(([k, s]) => (
+                <span key={k} className="inline-flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="inline-block h-[2px] w-6"
+                    style={
+                      s.strokeDasharray
+                        ? {
+                            backgroundImage: `repeating-linear-gradient(90deg, ${s.stroke} 0 4px, transparent 4px 8px)`,
+                          }
+                        : { backgroundColor: s.stroke }
+                    }
+                  />
+                  {s.label}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
@@ -711,8 +630,6 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
           node={selectedNode}
           center={subgraph.center}
           edges={subgraph.edges}
-          community={selectedCommunity}
-          membersInSameCommunity={membersInSameCommunity}
           pathStart={pathStart}
           pathStartNode={pathStartNode}
           path={path}
