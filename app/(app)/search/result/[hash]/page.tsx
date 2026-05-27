@@ -16,7 +16,7 @@ import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 import { getSubgraphStats } from '@/lib/graph/subgraph-stats';
 import { hashDocument } from '@/lib/hash';
 import { extractRelatedCpfs } from '@/lib/netrin/parsers/related-cpfs';
-import { extractCnpjRisk, extractCpfRisk } from '@/lib/netrin/parsers/risk-flags';
+import { extractCnpjRisk, extractCpfRisk, isSim } from '@/lib/netrin/parsers/risk-flags';
 import { isFirstDegree } from '@/lib/netrin/relationship-labels';
 import { loadEnrichmentForRoot } from '@/lib/netrin/result-loader';
 import type { NetrinCompositePayload } from '@/lib/netrin/types';
@@ -82,10 +82,6 @@ type PepKyc = {
   historyPEP?: unknown[];
   sanctionsHistory?: unknown[];
 };
-
-function isSim(v: unknown): boolean {
-  return v === true || v === 'Sim' || v === 'SIM' || v === 'S';
-}
 
 function extractPepFromHop1(p: NetrinCompositePayload) {
   const slug = (p as Record<string, unknown>).pepKyc as PepKyc | null | undefined;

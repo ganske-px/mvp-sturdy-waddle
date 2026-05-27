@@ -162,6 +162,23 @@ describe('buildNetrinGraph', () => {
     expect(root?.risk).toEqual({ isPep: true, hasSanction: false });
   });
 
+  it('preserva risk do nó raiz CPF mesmo se ele reaparecer como sócio', () => {
+    const root = '12345678909';
+    const result = buildNetrinGraph({
+      rootDocument: { type: 'cpf', raw: root, name: 'JOAO' },
+      cpfPayload: { pepKyc: { currentlyPEP: 'Sim' } } as never,
+      cnpjPayloads: {
+        '98765432000199': {
+          'pessoas-relacionadas-cnpj': {
+            entidadesRelacionadas: [{ cpf: root, nome: 'JOAO', vinculoDoRelacionamento: 'SOCIO' }],
+          },
+        },
+      },
+    });
+    const rootNode = result.nodes.find((n) => n.label.document === root);
+    expect(rootNode?.risk).toEqual({ isPep: true, hasSanction: false });
+  });
+
   it('CNPJ root: emits sócios from cnpjPayloads even without cpfPayload', () => {
     const result = buildNetrinGraph({
       rootDocument: { type: 'cnpj', raw: '12345678000190', name: 'ACME' },

@@ -54,6 +54,26 @@ function makeCnpjNode(cnpjRaw: string, name?: string): ExtractedNode {
   };
 }
 
+// Merges a node into the map, preserving risk flags and richer label fields
+// already stored on an existing entry. Prevents later risk-less occurrences
+// of the same hash (e.g. root CPF reappearing as a sócio) from clobbering
+// risk that was set on the root.
+function putNode(map: Map<string, ExtractedNode>, node: ExtractedNode): void {
+  const existing = map.get(node.nodeHash);
+  if (!existing) {
+    map.set(node.nodeHash, node);
+    return;
+  }
+  // Keep first-seen label fields (root's name/document) while filling any gaps.
+  // Preserve risk once set — the root sets it; later sócio occurrences don't carry it.
+  map.set(node.nodeHash, {
+    ...existing,
+    ...node,
+    label: { ...node.label, ...existing.label },
+    risk: existing.risk ?? node.risk,
+  });
+}
+
 function corporateEvidenceFromEntidade(e: Entidade): CorporateEdgeEvidence {
   return {
     vinculo:
@@ -78,19 +98,19 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
   if (input.rootDocument.type === 'cpf' && input.rootDocument.raw.length === 11) {
     const node = makeCpfNode(input.rootDocument.raw, input.rootDocument.name);
     if (input.cpfPayload) node.risk = extractCpfRisk(input.cpfPayload);
-    nodeMap.set(node.nodeHash, node);
+    putNode(nodeMap, node);
   } else if (input.rootDocument.type === 'cnpj' && input.rootDocument.raw.length === 14) {
     const node = makeCnpjNode(input.rootDocument.raw, input.rootDocument.name);
     const rootPayload = input.cnpjPayloads?.[input.rootDocument.raw];
     if (rootPayload) node.risk = extractCnpjRisk(rootPayload);
-    nodeMap.set(node.nodeHash, node);
+    putNode(nodeMap, node);
   }
 
   // CPF root → relaciona CNPJs de empresas
   if (input.cpfPayload) {
     for (const empresa of extractRelatedCompanies(input.cpfPayload)) {
       const node = makeCnpjNode(empresa.cnpj, empresa.razaoSocial);
-      nodeMap.set(node.nodeHash, node);
+      putNode(nodeMap, node);
       if (input.rootDocument.type === 'cpf') {
         edges.push({
           sourceHash: hashDocument('cpf', input.rootDocument.raw),
@@ -132,7 +152,7 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
         cpfRaw,
         typeof item.entidadeRelacionadaNome === 'string' ? item.entidadeRelacionadaNome : undefined,
       );
-      nodeMap.set(node.nodeHash, node);
+      putNode(nodeMap, node);
       edges.push({
         sourceHash: rootHash,
         targetHash: node.nodeHash,
@@ -154,9 +174,7 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
   for (const [cnpjRaw, payload] of Object.entries(input.cnpjPayloads ?? {})) {
     if (cnpjRaw.length !== 14) continue;
     const cnpjHash = hashDocument('cnpj', cnpjRaw);
-    if (!nodeMap.has(cnpjHash)) {
-      nodeMap.set(cnpjHash, makeCnpjNode(cnpjRaw));
-    }
+    putNode(nodeMap, makeCnpjNode(cnpjRaw));
     const slug = payload['pessoas-relacionadas-cnpj'] as
       | { entidadesRelacionadas?: unknown }
       | null
@@ -170,7 +188,7 @@ export function buildNetrinGraph(input: GraphBridgeInput): ExtractedGraph {
 
       const partnerName = typeof item.nome === 'string' ? item.nome : undefined;
       const socioNode = makeCpfNode(cpfRaw, partnerName);
-      nodeMap.set(socioNode.nodeHash, socioNode);
+      putNode(nodeMap, socioNode);
       edges.push({
         sourceHash: cnpjHash,
         targetHash: socioNode.nodeHash,

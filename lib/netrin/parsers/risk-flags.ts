@@ -3,7 +3,7 @@ import type { NetrinCompositePayload } from '@/lib/netrin/types.ts';
 
 export type RiskFlags = { isPep: boolean; hasSanction: boolean };
 
-function isSim(v: unknown): boolean {
+export function isSim(v: unknown): boolean {
   return v === true || v === 'Sim' || v === 'SIM' || v === 'S';
 }
 
