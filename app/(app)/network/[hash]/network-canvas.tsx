@@ -70,6 +70,9 @@ function NodeShell({
 }) {
   const shadow = nodeBoxShadow(data);
   // A prominência aumenta o tamanho do nó; o centro mantém destaque próprio.
+  // Escala no div interno (não no wrapper do React Flow): mantém o hit-testing e
+  // a medição do RF intactos. Custo: as arestas terminam na caixa não-escalada —
+  // offset cosmético pequeno e limitado (escala máx. 1.8x). Trade-off intencional.
   const style: React.CSSProperties = {
     transform: `scale(${data.scale})`,
     transformOrigin: 'center',
@@ -341,6 +344,12 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     for (const p of allPairs.values()) if (p.weight > max) max = p.weight;
     return Math.ceil(max);
   }, [allPairs]);
+
+  // Quando o máximo de força cai (ex.: tipo ocultado, ou navegação para uma
+  // rede mais esparsa), reancora o slider para não esvaziar o grafo em silêncio.
+  useEffect(() => {
+    setMinWeight((prev) => Math.min(prev, maxWeight));
+  }, [maxWeight]);
 
   // Pares que sobrevivem ao slider de força.
   const visiblePairs = useMemo(
