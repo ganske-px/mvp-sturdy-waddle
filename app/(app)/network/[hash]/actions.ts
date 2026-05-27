@@ -360,3 +360,13 @@ export async function findPathBetween(hashA: string, hashB: string): Promise<Pat
 
   return { found: true, nodes, hops: path.hops };
 }
+
+export async function findPathToDocument(
+  centerHash: string,
+  type: 'cpf' | 'cnpj',
+  rawValue: string,
+): Promise<PathBetweenDto> {
+  await requirePermission('search_network');
+  const targetHash = hashDocument(type, rawValue);
+  return findPathBetween(centerHash, targetHash);
+}
