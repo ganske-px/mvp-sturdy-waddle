@@ -1,3 +1,8 @@
+// Deno (Supabase Edge runtime) does not expose Buffer as a global; the import
+// is required there. Node strips this to the built-in. Without it, this module
+// throws ReferenceError at runtime in the edge functions and the graph write
+// fails silently (swallowed by the try/catch in lib/predictus/cache.ts).
+import { Buffer } from 'node:buffer';
 import type { Database } from '@/lib/supabase/types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { encryptLabel } from './label-crypto.ts';
