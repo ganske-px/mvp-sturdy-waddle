@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { W_DIV } from '@/lib/graph/edge-weight';
 import type { ShortestPath } from '@/lib/graph/path';
 import type { CorporateEdgeEvidence, StoredEdgeEvidence } from '@/lib/graph/types';
 import { ArrowRight, Eye, MapPin, Route, X } from 'lucide-react';
@@ -69,12 +70,30 @@ function VisaoTab({
   );
   const topEvidences = linkToCenter.length > 0 ? linkToCenter : incidentEdges.slice(0, 5);
 
+  // Força do vínculo direto com o centro: soma das forças das arestas + bônus
+  // por diversidade de tipos (mesma fórmula do canvas em edge-weight.ts).
+  const directMultiplicity = linkToCenter.reduce((sum, e) => sum + Math.max(1, e.weight), 0);
+  const directKinds = new Set(linkToCenter.map((e) => e.kind));
+  const pairWeight =
+    linkToCenter.length > 0 ? directMultiplicity + W_DIV * (directKinds.size - 1) : 0;
+
   return (
     <div className="flex flex-col gap-4 text-sm">
       <div>
         <p className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
           {node.hash === center.hash ? 'Centro da rede' : 'Vínculo com o centro'}
         </p>
+        {linkToCenter.length > 0 ? (
+          <div className="mt-1 flex items-center gap-2 text-xs">
+            <span className="rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 font-mono tabular-nums text-foreground">
+              força {pairWeight}
+            </span>
+            <span className="text-muted-foreground">
+              {directKinds.size} tipo{directKinds.size === 1 ? '' : 's'} · {linkToCenter.length}{' '}
+              conexõe{linkToCenter.length === 1 ? '' : 's'}
+            </span>
+          </div>
+        ) : null}
         {topEvidences.length === 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
             Sem vínculo direto. Esse nó aparece em outros vínculos da rede.
@@ -259,6 +278,7 @@ function CaminhosTab({
                       maskedPreview: hash.slice(0, 12),
                       isPep: false,
                       hasSanction: false,
+                      weight: 0,
                       lastSeenAt: '',
                     });
               return (
