@@ -295,6 +295,7 @@ export type Database = {
           is_pep: boolean;
           has_sanction: boolean;
           risk_updated_at: string | null;
+          weight: number;
         };
         Insert: {
           node_hash: string;
@@ -306,6 +307,7 @@ export type Database = {
           is_pep?: boolean;
           has_sanction?: boolean;
           risk_updated_at?: string | null;
+          weight?: number;
         };
         Update: {
           node_hash?: string;
@@ -317,6 +319,7 @@ export type Database = {
           is_pep?: boolean;
           has_sanction?: boolean;
           risk_updated_at?: string | null;
+          weight?: number;
         };
       };
       graph_edges: {
@@ -333,6 +336,7 @@ export type Database = {
           evidence: Record<string, unknown>;
           first_seen_at: string;
           last_seen_at: string;
+          weight: number;
         };
         Insert: {
           id?: string;
@@ -347,6 +351,7 @@ export type Database = {
           evidence?: Record<string, unknown>;
           first_seen_at?: string;
           last_seen_at?: string;
+          weight?: number;
         };
         Update: {
           id?: string;
@@ -361,6 +366,7 @@ export type Database = {
           evidence?: Record<string, unknown>;
           first_seen_at?: string;
           last_seen_at?: string;
+          weight?: number;
         };
       };
       netrin_cache: {
