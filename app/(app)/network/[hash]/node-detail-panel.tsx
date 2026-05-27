@@ -8,6 +8,7 @@ import { ArrowRight, Eye, MapPin, Route, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { GraphEdgeDto, GraphNodeDto } from './actions';
+import { InvestigateButton } from './investigate-button';
 
 function isProcessEvidence(
   ev: StoredEdgeEvidence,
@@ -18,7 +19,6 @@ function isProcessEvidence(
 function isCorporateEvidence(ev: StoredEdgeEvidence): ev is CorporateEdgeEvidence {
   return 'vinculo' in ev;
 }
-import { ExpandButton } from './expand-button';
 
 type Tab = 'visao' | 'caminhos';
 
@@ -135,12 +135,16 @@ function VisaoTab({
 
       {node.type !== 'lawyer' ? (
         <div className="flex flex-col gap-2 border-t border-border pt-3">
-          <ExpandButton hash={node.hash} inCache={node.inCache} />
+          <InvestigateButton hash={node.hash} />
           <Link href={`/network/${encodeURIComponent(node.hash)}`}>
             <Button variant="outline" size="sm" className="w-full">
-              Ver rede deste nó
+              Centralizar a rede neste nó
             </Button>
           </Link>
+          <p className="text-[0.65rem] text-muted-foreground">
+            Investigar dispara uma nova consulta e antifraude; centralizar apenas reposiciona a rede
+            já mapeada.
+          </p>
         </div>
       ) : null}
     </div>
@@ -255,7 +259,6 @@ function CaminhosTab({
                       maskedPreview: hash.slice(0, 12),
                       isPep: false,
                       hasSanction: false,
-                      inCache: false,
                       lastSeenAt: '',
                     });
               return (

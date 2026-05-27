@@ -30,7 +30,6 @@ export type GraphNodeDto = {
   maskedPreview: string;
   isPep: boolean;
   hasSanction: boolean;
-  inCache: boolean;
   lastSeenAt: string;
 };
 
@@ -87,32 +86,7 @@ async function fetchNodesInChunks(supabase: ServerClient, hashes: string[]): Pro
   return result;
 }
 
-async function fetchFreshCacheHashes(
-  supabase: ServerClient,
-  hashes: string[],
-  nowIso: string,
-): Promise<Set<string>> {
-  const out = new Set<string>();
-  if (hashes.length === 0) return out;
-  for (let i = 0; i < hashes.length; i += HASH_QUERY_BATCH) {
-    const chunk = hashes.slice(i, i + HASH_QUERY_BATCH);
-    const { data, error } = await supabase
-      .from('predictus_cache')
-      .select('document_hash')
-      .in('document_hash', chunk)
-      .gt('expires_at', nowIso)
-      .returns<Array<{ document_hash: string }>>();
-    if (error) throw new Error(`fetchFreshCacheHashes failed: ${error.message}`);
-    for (const r of data ?? []) out.add(r.document_hash);
-  }
-  return out;
-}
-
-async function rowToDto(
-  admin: AdminClient,
-  row: NodeRow,
-  cacheHashes: Set<string>,
-): Promise<GraphNodeDto> {
+async function rowToDto(admin: AdminClient, row: NodeRow): Promise<GraphNodeDto> {
   let label: GraphNodeLabel = {};
   try {
     const plaintext = await decryptLabel(admin, row.encrypted_label);
@@ -127,20 +101,15 @@ async function rowToDto(
     maskedPreview: row.masked_preview,
     isPep: row.is_pep,
     hasSanction: row.has_sanction,
-    inCache: row.node_type !== 'lawyer' && cacheHashes.has(row.node_hash),
     lastSeenAt: row.last_seen_at,
   };
 }
 
-async function rowsToDtosBatched(
-  admin: AdminClient,
-  rows: NodeRow[],
-  cacheHashes: Set<string>,
-): Promise<GraphNodeDto[]> {
+async function rowsToDtosBatched(admin: AdminClient, rows: NodeRow[]): Promise<GraphNodeDto[]> {
   const result: GraphNodeDto[] = [];
   for (let i = 0; i < rows.length; i += DECRYPT_BATCH) {
     const batch = rows.slice(i, i + DECRYPT_BATCH);
-    const dtos = await Promise.all(batch.map((r) => rowToDto(admin, r, cacheHashes)));
+    const dtos = await Promise.all(batch.map((r) => rowToDto(admin, r)));
     result.push(...dtos);
   }
   return result;
@@ -191,12 +160,8 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
 
   const neighborRows = await fetchNodesInChunks(supabase, neighborHashes);
 
-  const nowIso = new Date().toISOString();
-  const hashesToCheckCache = [centerRow.node_hash, ...neighborHashes];
-  const cacheHashes = await fetchFreshCacheHashes(supabase, hashesToCheckCache, nowIso);
-
-  const center = await rowToDto(admin, centerRow, cacheHashes);
-  const neighbors = await rowsToDtosBatched(admin, neighborRows, cacheHashes);
+  const center = await rowToDto(admin, centerRow);
+  const neighbors = await rowsToDtosBatched(admin, neighborRows);
 
   await writeAuditLog(
     {
@@ -263,12 +228,10 @@ export async function findPathBetween(hashA: string, hashB: string): Promise<Pat
 
   const rows = await fetchNodesInChunks(supabase, path.nodes);
   const byHash = new Map(rows.map((r) => [r.node_hash, r] as const));
-  const nowIso = new Date().toISOString();
-  const cacheHashes = await fetchFreshCacheHashes(supabase, path.nodes, nowIso);
 
   // Preserva a ordem do caminho; ignora hashes sem nó (não deveria ocorrer).
   const ordered = path.nodes.map((h) => byHash.get(h)).filter((r): r is NodeRow => r !== undefined);
-  const nodes = await rowsToDtosBatched(admin, ordered, cacheHashes);
+  const nodes = await rowsToDtosBatched(admin, ordered);
 
   return { found: true, nodes, hops: path.hops };
 }
