@@ -13,13 +13,13 @@ export type RiskVerdict = {
   hasSanction: boolean;
 };
 
-const NO_RISK: RiskVerdict = {
+const NO_RISK: RiskVerdict = Object.freeze({
   level: 'none',
   distance: 0,
   targetHash: null,
   isPep: false,
   hasSanction: false,
-};
+});
 
 type EdgeRow = { source_hash: string; target_hash: string };
 type RiskyRow = { node_hash: string; is_pep: boolean; has_sanction: boolean };
@@ -53,11 +53,12 @@ export async function getRiskVerdict(centerHash: string): Promise<RiskVerdict> {
   if (!nearest.found || nearest.targetHash === null) return NO_RISK;
 
   const target = riskyByHash.get(nearest.targetHash);
+  if (!target) return NO_RISK;
   return {
     level: nearest.level,
     distance: nearest.distance,
     targetHash: nearest.targetHash,
-    isPep: target?.is_pep ?? false,
-    hasSanction: target?.has_sanction ?? false,
+    isPep: target.is_pep,
+    hasSanction: target.has_sanction,
   };
 }
