@@ -80,32 +80,50 @@ export function JobProgress({
 
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase
-      .channel(`bulk-job-${job.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'bulk_jobs', filter: `id=eq.${job.id}` },
-        (payload) => {
-          setJob((prev) => ({ ...prev, ...(payload.new as Partial<JobRow>) }));
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'bulk_job_items',
-          filter: `job_id=eq.${job.id}`,
-        },
-        (payload) => {
-          const updated = payload.new as ItemRow;
-          setItems((prev) => prev.map((it) => (it.id === updated.id ? { ...it, ...updated } : it)));
-        },
-      )
-      .subscribe();
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+    let cancelled = false;
+
+    void (async () => {
+      // postgres_changes on RLS-protected tables only delivers events when the
+      // realtime socket carries the user's JWT. The SSR browser client does not
+      // forward the cookie session to the socket on its own, so set it here —
+      // otherwise the socket is anon and RLS filters every event out.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.access_token) await supabase.realtime.setAuth(session.access_token);
+
+      channel = supabase
+        .channel(`bulk-job-${job.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'bulk_jobs', filter: `id=eq.${job.id}` },
+          (payload) => {
+            setJob((prev) => ({ ...prev, ...(payload.new as Partial<JobRow>) }));
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'bulk_job_items',
+            filter: `job_id=eq.${job.id}`,
+          },
+          (payload) => {
+            const updated = payload.new as ItemRow;
+            setItems((prev) =>
+              prev.map((it) => (it.id === updated.id ? { ...it, ...updated } : it)),
+            );
+          },
+        )
+        .subscribe();
+    })();
 
     return () => {
-      void supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [job.id]);
 

@@ -120,11 +120,18 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - Signup is disabled (`supabase/config.toml`). Operators are created manually via Supabase Studio → Auth → Add user. A Postgres trigger mirrors them into `public.users`.
 - `proxy.ts` enforces both: (1) authenticated session and (2) row in `public.users`. Removing a row from `public.users` revokes access without touching `auth.users`.
 - Tables are RLS-protected:
-  - `searches`, `bulk_jobs`, `audit_log` — operator reads/writes own rows. `searches` está em `supabase_realtime` publication para que a página de resultado assine UPDATEs da Predictus async (mudança de `status` pending→completed/failed).
+  - `searches`, `bulk_jobs`, `audit_log` — operator reads/writes own rows. `searches` está em `supabase_realtime` publication **com `REPLICA IDENTITY FULL`** para que a página de resultado assine UPDATEs da Predictus async (mudança de `status` pending→completed/failed). Ver invariante de realtime + RLS abaixo.
   - `bulk_job_items` — visible only when the parent job belongs to the operator.
   - `predictus_cache`, `netrin_cache` — any authenticated operator can read; **writes via service-role only**.
   - `graph_nodes`, `graph_edges` — any authenticated operator can read; **writes via service-role only** (via `upsert_graph` RPC).
-  - `enrichment_jobs`, `enrichment_job_calls` — operator reads próprias rows (parent gate em calls); **writes via service-role only**. Ambas tabelas estão em `supabase_realtime` publication para o canal `enrichment:<jobId>`.
+  - `enrichment_jobs`, `enrichment_job_calls` — operator reads próprias rows (parent gate em calls); **writes via service-role only**. Ambas tabelas estão em `supabase_realtime` publication **com `REPLICA IDENTITY FULL`** para o canal `enrichment:<jobId>`. Ver invariante de realtime + RLS abaixo.
+
+### Realtime + RLS — `REPLICA IDENTITY FULL` é obrigatória (LEIA ANTES de mexer em realtime)
+
+- **A tela `/search/result/[hash]` atualiza sozinha quando QUALQUER fornecedor responde** — Predictus (UPDATE em `searches`, via `SearchRowRealtime`) **e** antifraude/Netrin (UPDATE em `enrichment_jobs` + INSERT em `enrichment_job_calls`, via `EnrichmentRealtime`). Nunca tratar "atualização em tempo real" como exclusiva da Predictus: as duas fontes correm em paralelo e ambas precisam disparar `router.refresh()` ao chegarem.
+- **Toda tabela com RLS publicada em `supabase_realtime` cujo refresh do cliente depende de um evento UPDATE/DELETE PRECISA de `REPLICA IDENTITY FULL`.** O Realtime avalia as policies de RLS sobre o registro *antigo* da mudança; com a replica identity default (só a PK) o registro antigo não tem as colunas da policy (ex.: `user_id`) nem as do filtro (ex.: `document_hash`), então o evento é **descartado silenciosamente** e a tela só atualiza com F5. Eventos INSERT não sofrem disso (carregam o registro novo completo) — por isso o refresh de `enrichment_job_calls` funcionava mesmo sem full. Aplicado na migration `20260527130000_realtime_replica_identity.sql`.
+- Ao publicar uma tabela nova com RLS no realtime, **sempre** acompanhar com `alter table <t> replica identity full` na mesma migration se o cliente depender de UPDATE/DELETE. `bulk_jobs`/`bulk_job_items` seguem o mesmo invariante (publicação + full em `20260527130100_bulk_realtime.sql`).
+- **No client, todo componente de realtime PRECISA setar o auth do socket** antes de `.subscribe()`: `const { data: { session } } = await supabase.auth.getSession(); if (session?.access_token) await supabase.realtime.setAuth(session.access_token);`. O browser client SSR não repassa a sessão do cookie ao socket — sem isso o socket é anônimo e o RLS filtra todos os eventos. Padrão em `SearchRowRealtime`, `EnrichmentRealtime` e `JobProgress`.
   - `predictus_token`, `crypto` helpers — **service-role only** (no policies → RLS denies everyone else).
 - Anything that writes `audit_log` or `predictus_cache` must use `createAdminClient()` (service role). Anything that reads operator-private data uses `createClient()` (server, cookie-aware).
 
@@ -160,7 +167,7 @@ legacy-streamlit/   DO NOT TOUCH. Old Python MVP, kept for reference only.
 - O Edge Function recebe só `{ jobId }`, lê a row de `enrichment_jobs` (com `document_encrypted`), decifra via `decryptText` e usa o plaintext como `rootRaw`. Plaintext nunca persiste fora do stack frame.
 - O Edge Function chama `processEnrichmentJob` com `runHop1` / `runHop2` / `runHop3` injetados — todos compartilhados de `lib/netrin/hops/`. Erro em Hop 1 = `failed`; erro em Hop 2/3 isolado por item = `partial`. Crash do Edge ou trigger falhando (vault sem segredos, pg_net off) = órfão → `failed` em até 15 min via pg_cron.
 - Após todos os hops, `buildNetrinGraph(...)` produz `ExtractedGraph` (nodes cpf/cnpj, edges `corporate_relation`) e `upsertGraph` persiste no grafo compartilhado.
-- A página `/search/result/[hash]` chama `loadEnrichmentForRoot` (server-only) que decifra `netrin_cache` por hash e renderiza as cards via componentes em `components/antifraude/`. `EnrichmentRealtime` (client) assina `postgres_changes` em `enrichment_jobs` e `enrichment_job_calls` e chama `router.refresh()` em mudanças.
+- A página `/search/result/[hash]` chama `loadEnrichmentForRoot` (server-only) que decifra `netrin_cache` por hash e renderiza as cards via componentes em `components/antifraude/`. `SearchRowRealtime` (client) assina `postgres_changes` em `searches` (Predictus) e `EnrichmentRealtime` assina `enrichment_jobs` + `enrichment_job_calls` (antifraude); ambos chamam `router.refresh()` em qualquer mudança — a tela atualiza com QUALQUER fornecedor (ver invariante de realtime + RLS acima).
 
 ### Bulk processing
 
