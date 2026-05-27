@@ -38,6 +38,7 @@ export function pairKey(a: string, b: string): string {
 }
 
 export function dominantKind(kinds: EdgeKind[]): EdgeKind {
+  if (kinds.length === 0) throw new Error('dominantKind: kinds must be non-empty');
   return kinds.reduce(
     (best, k) => (KIND_RANK[k] > KIND_RANK[best] ? k : best),
     kinds[0] as EdgeKind,

@@ -58,6 +58,11 @@ describe('pairStrokeWidth', () => {
     expect(pairStrokeWidth(1, 1)).toBeLessThan(pairStrokeWidth(20, 1));
     expect(pairStrokeWidth(100000, 5)).toBeLessThanOrEqual(8);
   });
+
+  it('clamps to a minimum of 1', () => {
+    expect(pairStrokeWidth(0, 1)).toBe(1);
+    expect(pairStrokeWidth(0.5, 1)).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe('nodeScale', () => {
