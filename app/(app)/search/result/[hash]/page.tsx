@@ -6,6 +6,7 @@ import { PepCard } from '@/components/antifraude/pep-card';
 import { RelatedCompanies } from '@/components/antifraude/related-companies';
 import { RelatedPeople } from '@/components/antifraude/related-people';
 import { ResultSection } from '@/components/antifraude/result-section';
+import { RiskVerdictBanner } from '@/components/antifraude/risk-verdict-banner';
 import { SancoesCardCnpj } from '@/components/antifraude/sancoes-card-cnpj';
 import { SearchRowRealtime } from '@/components/antifraude/search-row-realtime';
 import { type SocioEntry, SociosCard } from '@/components/antifraude/socios-card';
@@ -13,6 +14,7 @@ import type { RelatedCompanyEntry, RelatedPersonEntry } from '@/components/antif
 import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
 import { ProcessResultsTable } from '@/components/process-results-table';
 import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
+import { type RiskVerdict, getRiskVerdict } from '@/lib/graph/risk-verdict';
 import { getSubgraphStats } from '@/lib/graph/subgraph-stats';
 import { hashDocument } from '@/lib/hash';
 import { extractRelatedCpfs } from '@/lib/netrin/parsers/related-cpfs';
@@ -438,6 +440,21 @@ export default async function ResultPage({
     }
   }
 
+  let riskVerdict: RiskVerdict = {
+    level: 'none',
+    distance: 0,
+    targetHash: null,
+    isPep: false,
+    hasSanction: false,
+  };
+  if (networkHash && canSeeNetwork) {
+    try {
+      riskVerdict = await getRiskVerdict(networkHash);
+    } catch (e) {
+      console.warn('result page: risk verdict failed', e);
+    }
+  }
+
   // Derive antifraude card props from hop1 payload
   const hop1 = enrichment?.payloads.hop1 ?? null;
   const byCnpj = enrichment?.payloads.byCnpj ?? {};
@@ -495,6 +512,7 @@ export default async function ResultPage({
       <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         {/* ── Coluna principal ─────────────────────────────────────────── */}
         <div className="flex flex-col gap-6">
+          <RiskVerdictBanner verdict={riskVerdict} networkHash={networkHash} />
           {searchRow.search_type === 'cnpj' ? (
             <IdentityHero
               tipo="cnpj"
