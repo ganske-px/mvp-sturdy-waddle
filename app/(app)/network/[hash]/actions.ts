@@ -28,6 +28,7 @@ export type GraphNodeDto = {
   isPep: boolean;
   hasSanction: boolean;
   lastSeenAt: string;
+  weight: number;
 };
 
 export type GraphEdgeDto = {
@@ -36,6 +37,7 @@ export type GraphEdgeDto = {
   kind: EdgeKind;
   evidence: StoredEdgeEvidence;
   lastSeenAt: string;
+  weight: number;
 };
 
 export type SubgraphDto = {
@@ -52,6 +54,7 @@ type NodeRow = {
   is_pep: boolean;
   has_sanction: boolean;
   last_seen_at: string;
+  weight: number;
 };
 
 type EdgeRow = {
@@ -60,6 +63,7 @@ type EdgeRow = {
   kind: EdgeKind;
   evidence: StoredEdgeEvidence;
   last_seen_at: string;
+  weight: number;
 };
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -73,7 +77,7 @@ async function fetchNodesInChunks(supabase: ServerClient, hashes: string[]): Pro
     const { data, error } = await supabase
       .from('graph_nodes')
       .select(
-        'node_hash, node_type, encrypted_label, masked_preview, last_seen_at, is_pep, has_sanction',
+        'node_hash, node_type, encrypted_label, masked_preview, last_seen_at, is_pep, has_sanction, weight',
       )
       .in('node_hash', chunk)
       .returns<NodeRow[]>();
@@ -92,6 +96,7 @@ function nodeRowToDto(row: NodeRow, label: GraphNodeLabel): GraphNodeDto {
     isPep: row.is_pep,
     hasSanction: row.has_sanction,
     lastSeenAt: row.last_seen_at,
+    weight: row.weight,
   };
 }
 
@@ -137,7 +142,7 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
   const { data: centerRow } = await supabase
     .from('graph_nodes')
     .select(
-      'node_hash, node_type, encrypted_label, masked_preview, last_seen_at, is_pep, has_sanction',
+      'node_hash, node_type, encrypted_label, masked_preview, last_seen_at, is_pep, has_sanction, weight',
     )
     .eq('node_hash', centerHash)
     .maybeSingle()
@@ -163,7 +168,7 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
 
   const { data: edgeRows } = await supabase
     .from('graph_edges')
-    .select('source_hash, target_hash, kind, evidence, last_seen_at')
+    .select('source_hash, target_hash, kind, evidence, last_seen_at, weight')
     .or(`source_hash.eq.${centerHash},target_hash.eq.${centerHash}`)
     .returns<EdgeRow[]>();
 
@@ -199,6 +204,7 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
       kind: e.kind,
       evidence: e.evidence,
       lastSeenAt: e.last_seen_at,
+      weight: e.weight,
     })),
   };
 }
