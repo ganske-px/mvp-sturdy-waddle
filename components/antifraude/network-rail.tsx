@@ -8,6 +8,8 @@ export type NetworkRailProps = {
   stats: SubgraphStats;
   networkHash: string | null;
   canSeeNetwork: boolean;
+  /** Cadeia de breadcrumb da tela de detalhe, para a rede saber voltar. */
+  currentPath?: string;
 };
 
 // Snapshot ilustrativo: anel determinístico de nós ao redor do centro.
@@ -69,10 +71,12 @@ function StatRow({
   );
 }
 
-export function NetworkRail({ stats, networkHash, canSeeNetwork }: NetworkRailProps) {
+export function NetworkRail({ stats, networkHash, canSeeNetwork, currentPath }: NetworkRailProps) {
   if (!networkHash || !canSeeNetwork) return null;
 
   const empty = stats.nodes === 0 && stats.edges === 0;
+  const origem = currentPath ?? networkHash;
+  const networkHref = `/network/${encodeURIComponent(networkHash)}?origem=${encodeURIComponent(origem)}`;
 
   return (
     <aside className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card p-5 lg:sticky lg:top-8 lg:self-start">
@@ -113,10 +117,7 @@ export function NetworkRail({ stats, networkHash, canSeeNetwork }: NetworkRailPr
         </>
       )}
 
-      <Link
-        href={`/network/${encodeURIComponent(networkHash)}`}
-        className={buttonVariants({ variant: 'default', size: 'sm' })}
-      >
+      <Link href={networkHref} className={buttonVariants({ variant: 'default', size: 'sm' })}>
         Abrir rede completa
         <ArrowRightIcon className="ml-1 size-3.5" />
       </Link>

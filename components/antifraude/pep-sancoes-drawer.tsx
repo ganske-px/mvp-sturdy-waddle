@@ -13,13 +13,14 @@ import {
 } from '@/components/ui/sheet';
 import type { PepHistoryEntry } from '@/lib/netrin/parsers/pep-detail';
 import type { SanctionMatch } from '@/lib/netrin/parsers/sanctions-detail';
-import { InfoIcon } from 'lucide-react';
+import { ArrowRightIcon, InfoIcon } from 'lucide-react';
 import { ExpandableText } from './expandable-text';
 
 function matchRateVariant(rate: number): 'destructive' | 'warning' | 'muted' {
-  if (rate >= 85) return 'destructive';
-  if (rate >= 50) return 'warning';
-  return 'muted';
+  // Abaixo de 80% é provável homônimo: chip apagado para não chamar atenção.
+  if (rate < 80) return 'muted';
+  if (rate >= 90) return 'destructive';
+  return 'warning';
 }
 
 function Field({ label, value }: { label: string; value?: string }) {
@@ -46,12 +47,16 @@ export function PepSancoesDrawer({
   const total = sanctions.length + pepHistory.length;
   if (total === 0) return null;
 
+  // Maior similaridade primeiro; sem matchRate vai para o fim.
+  const sortedSanctions = [...sanctions].sort((a, b) => (b.matchRate ?? -1) - (a.matchRate ?? -1));
+
   return (
     <Sheet>
       <SheetTrigger
         render={
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" className="shrink-0 text-primary">
             Ver {total} registro{total === 1 ? '' : 's'}
+            <ArrowRightIcon className="ml-1 size-3" />
           </Button>
         }
       />
@@ -81,7 +86,7 @@ export function PepSancoesDrawer({
                 Sanções ({sanctions.length})
               </h3>
               <ul className="space-y-3">
-                {sanctions.map((s, i) => (
+                {sortedSanctions.map((s, i) => (
                   <li
                     key={`${s.source ?? 'src'}-${s.sanctionName ?? i}-${i}`}
                     className="rounded-xl border border-border/60 bg-card p-3"

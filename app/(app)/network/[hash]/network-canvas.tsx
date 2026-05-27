@@ -3,7 +3,7 @@
 import Graph from 'graphology';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import { Building2, Filter, Scale, User } from 'lucide-react';
-import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -28,6 +28,7 @@ import { findShortestPath } from '@/lib/graph/path';
 import type { NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
 import type { GraphEdgeDto, GraphNodeDto, SubgraphDto } from './actions';
 import { FloatingEdge } from './floating-edge';
+import { HoverProvider, useHoverStore, useNodeHoverState } from './hover-store';
 import { NodeDetailPanel } from './node-detail-panel';
 
 /** True when the stored evidence comes from the process branch (has occurrences/samePolo). */
@@ -40,15 +41,20 @@ function isProcessEvidence(
 type NodeData = {
   dto: GraphNodeDto;
   isCenter: boolean;
-  inSpotlight: boolean;
-  dimmed: boolean;
   onPath: boolean;
   isPathStart: boolean;
+  /** Há um caminho destacado: nesse modo o caminho manda e o hover é ignorado. */
+  pathActive: boolean;
+  /** Caminho ativo e este nó está fora dele → atenuado. */
+  pathDimmed: boolean;
+  /** Vizinhos visíveis deste nó — usado para o realce de hover (estável por filtro). */
+  neighborHashes: ReadonlySet<string>;
   /** Escala visual derivada da prominência do nó (peso persistido). */
   scale: number;
 };
 
 const PATH_HIGHLIGHT = '#fbbf24'; // amber-400
+const EMPTY_NEIGHBORS: ReadonlySet<string> = new Set();
 
 function nodeBoxShadow(data: NodeData): string | undefined {
   if (data.isPathStart) return `0 0 0 3px ${PATH_HIGHLIGHT}, 0 0 18px ${PATH_HIGHLIGHT}55`;
@@ -58,16 +64,21 @@ function nodeBoxShadow(data: NodeData): string | undefined {
 }
 
 function NodeShell({
+  id,
   data,
   baseClass,
   Icon,
   iconClass,
 }: {
+  id: string;
   data: NodeData;
   baseClass: string;
   Icon: typeof User;
   iconClass?: string;
 }) {
+  const hover = useNodeHoverState(id, data.neighborHashes);
+  // Caminho destacado manda; fora dele, o hover atenua os não-vizinhos.
+  const dimmed = data.pathActive ? data.pathDimmed : hover === 'dim';
   const shadow = nodeBoxShadow(data);
   // A prominência aumenta o tamanho do nó; o centro mantém destaque próprio.
   // Escala no div interno (não no wrapper do React Flow): mantém o hit-testing e
@@ -80,7 +91,7 @@ function NodeShell({
   };
   return (
     <div
-      className={`transition-opacity ${baseClass} ${data.dimmed ? 'opacity-20' : 'opacity-100'}`}
+      className={`transition-opacity ${baseClass} ${dimmed ? 'opacity-20' : 'opacity-100'}`}
       style={style}
     >
       <Handle type="target" position={Position.Top} className="opacity-0" />
@@ -91,13 +102,14 @@ function NodeShell({
   );
 }
 
-function CpfNode({ data }: NodeProps<NodeData>) {
+function CpfNode({ id, data }: NodeProps<NodeData>) {
   const sizing = data.isCenter ? 'px-3 py-1.5 text-[0.7rem]' : 'px-2 py-1 text-[0.6rem]';
   const border = data.isCenter
     ? 'border-2 border-primary ring-2 ring-primary/30'
     : 'border-2 border-primary/70';
   return (
     <NodeShell
+      id={id}
       data={data}
       Icon={User}
       iconClass="text-primary"
@@ -106,13 +118,14 @@ function CpfNode({ data }: NodeProps<NodeData>) {
   );
 }
 
-function CnpjNode({ data }: NodeProps<NodeData>) {
+function CnpjNode({ id, data }: NodeProps<NodeData>) {
   const sizing = data.isCenter ? 'px-3 py-1.5 text-[0.7rem]' : 'px-2 py-1 text-[0.6rem]';
   const border = data.isCenter
     ? 'border-2 border-accent ring-2 ring-accent/30'
     : 'border-2 border-accent/70';
   return (
     <NodeShell
+      id={id}
       data={data}
       Icon={Building2}
       iconClass="text-accent-foreground"
@@ -121,9 +134,10 @@ function CnpjNode({ data }: NodeProps<NodeData>) {
   );
 }
 
-function LawyerNode({ data }: NodeProps<NodeData>) {
+function LawyerNode({ id, data }: NodeProps<NodeData>) {
   return (
     <NodeShell
+      id={id}
       data={data}
       Icon={Scale}
       iconClass="text-muted-foreground"
@@ -198,6 +212,16 @@ function dominantStyle(constituents: GraphEdgeDto[]): EdgeStyleKind {
     );
 }
 
+/** FNV-1a → [0,1). Determinístico por hash: o mesmo grafo sempre semeia igual. */
+function seededUnit(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
 function computeLayout(
   center: GraphNodeDto,
   visibleNeighbors: GraphNodeDto[],
@@ -221,8 +245,11 @@ function computeLayout(
       g.setNodeAttribute(node, 'x', 0);
       g.setNodeAttribute(node, 'y', 0);
     } else {
-      const angle = Math.random() * Math.PI * 2;
-      const r = seedRadius * (0.5 + Math.random() * 0.5);
+      // Seed determinístico (forceAtlas2 não tem aleatoriedade interna): o mesmo
+      // grafo sempre converge para o mesmo layout, eliminando o reshuffle a cada
+      // refresh/filtro que antes vinha do Math.random().
+      const angle = seededUnit(node) * Math.PI * 2;
+      const r = seedRadius * (0.5 + seededUnit(`${node}:r`) * 0.5);
       g.setNodeAttribute(node, 'x', r * Math.cos(angle));
       g.setNodeAttribute(node, 'y', r * Math.sin(angle));
     }
@@ -264,14 +291,15 @@ function computeLayout(
 export function NetworkCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   return (
     <ReactFlowProvider>
-      <InnerCanvas subgraph={subgraph} />
+      <HoverProvider>
+        <InnerCanvas subgraph={subgraph} />
+      </HoverProvider>
     </ReactFlowProvider>
   );
 }
 
 function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
-  const [hoveredHash, setHoveredHash] = useState<string | null>(null);
   const [pathStart, setPathStart] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<NodeType>>(new Set());
   const [hiddenEdgeKinds, setHiddenEdgeKinds] = useState<Set<EdgeStyleKind>>(new Set());
@@ -282,6 +310,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
   const edgeTypes = useMemo(() => ({ floating: FloatingEdge }), []);
   const fitViewOptions = useMemo(() => ({ padding: 0.2 }), []);
   const reactFlow = useReactFlow();
+  const hoverStore = useHoverStore();
 
   const deferredMinWeight = useDeferredValue(minWeight);
   const deferredHiddenTypes = useDeferredValue(hiddenTypes);
@@ -393,31 +422,36 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     return findShortestPath(pathEdges, pathStart, selectedHash);
   }, [pathStart, selectedHash, pathEdges]);
 
-  const spotlight = useMemo(() => {
-    const nodes = new Set<string>();
-    const edges = new Set<string>(); // por pairKey
-    if (path) {
-      for (const h of path.nodes) nodes.add(h);
-      for (let i = 0; i < path.nodes.length - 1; i++) {
-        const a = path.nodes[i];
-        const b = path.nodes[i + 1];
-        if (a && b) edges.add(pairKey(a, b));
-      }
-      return { nodes, edges, kind: 'path' as const };
+  // Spotlight é só do caminho mais curto (estado raro). O realce de hover saiu
+  // dos arrays e vive no hover-store, então hover não reconstrói nodes/edges.
+  const pathSpotlight = useMemo(() => {
+    if (!path) return null;
+    const nodes = new Set<string>(path.nodes);
+    const edges = new Set<string>();
+    for (let i = 0; i < path.nodes.length - 1; i++) {
+      const a = path.nodes[i];
+      const b = path.nodes[i + 1];
+      if (a && b) edges.add(pairKey(a, b));
     }
-    if (hoveredHash) {
-      nodes.add(hoveredHash);
-      for (const p of visiblePairs) {
-        if (p.a === hoveredHash || p.b === hoveredHash) {
-          edges.add(pairKey(p.a, p.b));
-          nodes.add(p.a);
-          nodes.add(p.b);
-        }
-      }
-      return { nodes, edges, kind: 'hover' as const };
+    return { nodes, edges };
+  }, [path]);
+  const pathActive = pathSpotlight !== null;
+
+  // Vizinhança visível por nó — alimenta o realce de hover nos componentes.
+  // Recalcula só quando os pares mudam (filtro), nunca no hover.
+  const adjacency = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    const link = (a: string, b: string) => {
+      const set = m.get(a) ?? new Set<string>();
+      set.add(b);
+      m.set(a, set);
+    };
+    for (const p of visiblePairs) {
+      link(p.a, p.b);
+      link(p.b, p.a);
     }
-    return null;
-  }, [path, hoveredHash, visiblePairs]);
+    return m;
+  }, [visiblePairs]);
 
   const pathNodesByHash = useMemo(() => {
     const m = new Map<string, GraphNodeDto>();
@@ -443,24 +477,26 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         const styleKind = dominantStyle(constituents);
         const style = EDGE_STYLES[styleKind];
         const widthBase = pairStrokeWidth(p.weight, p.diversity);
-        const onPath = spotlight?.kind === 'path' && spotlight.edges.has(key);
-        const inHover = spotlight?.kind === 'hover' && spotlight.edges.has(key);
-        const dimmed = spotlight !== null && !spotlight.edges.has(key);
+        const onPath = pathSpotlight?.edges.has(key) ?? false;
+        // Opacidade base. Com caminho ativo, fora-do-caminho atenua. Sem caminho,
+        // 0.7 é o repouso e o hover (no FloatingEdge) modula a partir daí.
+        const baseOpacity = pathActive ? (onPath ? 1 : 0.08) : 0.7;
         return {
           id: key,
           source: p.a,
           target: p.b,
           type: 'floating',
+          data: { pathActive },
           // Pares multi-tipo nunca tracejam (linha cheia = vínculo "forte/denso").
           style: {
             stroke: onPath ? PATH_HIGHLIGHT : style.stroke,
             strokeDasharray: onPath || p.diversity > 1 ? undefined : style.strokeDasharray,
             strokeWidth: onPath ? widthBase + 1.5 : widthBase,
-            opacity: dimmed ? 0.08 : inHover || onPath ? 1 : 0.7,
+            opacity: baseOpacity,
           },
         };
       }),
-    [visiblePairs, constituentsByPair, spotlight],
+    [visiblePairs, constituentsByPair, pathSpotlight, pathActive],
   );
 
   const finalNodes = useMemo<Node<NodeData>[]>(() => {
@@ -468,9 +504,7 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
     const pool: GraphNodeDto[] = [subgraph.center, ...visibleNeighbors];
     return pool.map((n) => {
       const pos = positions.get(n.hash) ?? { x: 0, y: 0 };
-      const inSpotlight = spotlight?.nodes.has(n.hash) ?? false;
-      const dimmed = spotlight !== null && !inSpotlight;
-      const onPath = spotlight?.kind === 'path' && spotlight.nodes.has(n.hash);
+      const onPath = pathSpotlight?.nodes.has(n.hash) ?? false;
       return {
         id: n.hash,
         type: n.type,
@@ -478,23 +512,36 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
         data: {
           dto: n,
           isCenter: n.hash === subgraph.center?.hash,
-          inSpotlight,
-          dimmed,
           onPath,
           isPathStart: n.hash === pathStart,
+          pathActive,
+          pathDimmed: pathActive && !onPath,
+          neighborHashes: adjacency.get(n.hash) ?? EMPTY_NEIGHBORS,
           scale: n.hash === subgraph.center?.hash ? 1 : nodeScale(n.weight),
         },
       };
     });
-  }, [subgraph.center, visibleNeighbors, positions, spotlight, pathStart]);
+  }, [
+    subgraph.center,
+    visibleNeighbors,
+    positions,
+    pathSpotlight,
+    pathActive,
+    pathStart,
+    adjacency,
+  ]);
 
+  // Auto-fit só ao montar / trocar de grafo (navegação para outro centro).
+  // Antes refitava a cada mudança de contagem — toda toggle de filtro reanimava
+  // a câmera 400ms, somando à sensação de "reatualizando". Filtros agora
+  // preservam o enquadramento do operador.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reactFlow.fitView is stable across renders
   useEffect(() => {
     const id = requestAnimationFrame(() => {
       reactFlow.fitView({ padding: 0.2, duration: 400 });
     });
     return () => cancelAnimationFrame(id);
-  }, [finalNodes.length, finalEdges.length, reactFlow]);
+  }, [subgraph.center?.hash, reactFlow]);
 
   function toggleType(t: NodeType) {
     setHiddenTypes((prev) => {
@@ -513,6 +560,20 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
       return next;
     });
   }
+
+  const centerHash = subgraph.center?.hash;
+  const onNodeClick = useCallback((_: unknown, n: Node) => setSelectedHash(n.id), []);
+  const onNodeMouseEnter = useCallback((_: unknown, n: Node) => hoverStore.set(n.id), [hoverStore]);
+  const onNodeMouseLeave = useCallback(() => hoverStore.set(null), [hoverStore]);
+  const onPaneClick = useCallback(() => hoverStore.set(null), [hoverStore]);
+  const onEdgeClick = useCallback(
+    (_: unknown, edge: Edge) => {
+      // Selecionar a aresta abre o detalhe do par no painel: escolhe o endpoint
+      // que não é o centro (ou a origem) para focar o vínculo.
+      setSelectedHash(edge.source === centerHash ? edge.target : edge.source);
+    },
+    [centerHash],
+  );
 
   if (!subgraph.center) {
     return (
@@ -643,16 +704,19 @@ function InnerCanvas({ subgraph }: { subgraph: SubgraphDto }) {
             edges={finalEdges}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            onNodeClick={(_, n) => setSelectedHash(n.id)}
-            onNodeMouseEnter={(_, n) => setHoveredHash(n.id)}
-            onNodeMouseLeave={() => setHoveredHash(null)}
-            onEdgeClick={(_, edge) => {
-              // Selecionar a aresta abre o detalhe do par no painel: escolhe o
-              // endpoint que não é o centro (ou a origem) para focar o vínculo.
-              const other = edge.source === subgraph.center?.hash ? edge.target : edge.source;
-              setSelectedHash(other);
-            }}
-            onPaneClick={() => setHoveredHash(null)}
+            onNodeClick={onNodeClick}
+            onNodeMouseEnter={onNodeMouseEnter}
+            onNodeMouseLeave={onNodeMouseLeave}
+            onEdgeClick={onEdgeClick}
+            onPaneClick={onPaneClick}
+            // Não usamos drag/seleção/conexão do RF — a seleção é nossa, via
+            // onNodeClick. Com drag ligado, um micro-movimento entre mousedown e
+            // mouseup virava "drag" e engolia o clique. Desligar torna o clique
+            // determinístico e evita re-renders internos de seleção.
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            selectNodesOnDrag={false}
             fitView
             fitViewOptions={fitViewOptions}
             minZoom={0.05}

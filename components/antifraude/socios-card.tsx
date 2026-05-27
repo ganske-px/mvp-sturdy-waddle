@@ -2,6 +2,7 @@
 
 // components/antifraude/socios-card.tsx
 import { deepenDocument } from '@/app/(app)/search/deepen/actions';
+import { EntityListItem } from '@/components/entity-list-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -42,43 +43,43 @@ export function SociosCard({ status, parentCnpjHash, currentPath, socios, bare }
     ) : socios.length === 0 ? (
       <p className="text-muted-foreground">Nenhum sócio identificado.</p>
     ) : (
-      <ul className="flex flex-col gap-2">
+      <div>
         {socios.map((s, i) => (
-          <li
+          <EntityListItem
             key={`${s.cpfHash}-${i}`}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
-          >
-            <div className="flex flex-col gap-0.5">
-              <span className="font-medium">{s.nome ?? 'Nome não informado'}</span>
-              <span className="text-xs text-muted-foreground">{s.maskedPreview}</span>
-              <div className="flex flex-wrap gap-1">
-                {s.vinculo ? <Badge variant="outline">{s.vinculo}</Badge> : null}
-                {typeof s.percentual === 'number' ? (
-                  <Badge variant="outline">{s.percentual}%</Badge>
-                ) : null}
-              </div>
-            </div>
-            <Button
-              variant={s.hasCached ? 'outline' : 'default'}
-              size="sm"
-              disabled={isPending}
-              onClick={() => {
-                startTransition(async () => {
-                  await deepenDocument({
-                    docType: 'cpf-socio',
-                    cpfHash: s.cpfHash,
-                    parentCnpjHash,
-                    currentPath,
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isPending}
+                className="shrink-0 text-primary"
+                onClick={() => {
+                  startTransition(async () => {
+                    await deepenDocument({
+                      docType: 'cpf-socio',
+                      cpfHash: s.cpfHash,
+                      parentCnpjHash,
+                      currentPath,
+                    });
                   });
-                });
-              }}
-            >
-              {s.hasCached ? 'Ver detalhes' : 'Aprofundar'}
-              <ArrowRightIcon className="ml-1 size-3" />
-            </Button>
-          </li>
+                }}
+              >
+                {s.hasCached ? 'Ver detalhes' : 'Aprofundar'}
+                <ArrowRightIcon className="ml-1 size-3" />
+              </Button>
+            }
+          >
+            <span className="font-medium">{s.nome ?? 'Nome não informado'}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">{s.maskedPreview}</span>
+              {s.vinculo ? <Badge variant="outline">{s.vinculo}</Badge> : null}
+              {typeof s.percentual === 'number' ? (
+                <Badge variant="outline">{s.percentual}%</Badge>
+              ) : null}
+            </div>
+          </EntityListItem>
         ))}
-      </ul>
+      </div>
     );
 
   if (bare) return <div className="space-y-2 text-sm">{body}</div>;

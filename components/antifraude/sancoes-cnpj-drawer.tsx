@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/sheet';
 import type { CnpjSanctionEntry } from '@/lib/netrin/parsers/cnpj-sanctions-detail';
 import { countSanctions } from '@/lib/netrin/parsers/cnpj-sanctions-detail';
+import { ArrowRightIcon } from 'lucide-react';
 
 function SanctionList({ title, entries }: { title: string; entries: CnpjSanctionEntry[] }) {
   if (entries.length === 0) return null;
@@ -58,8 +59,9 @@ export function SancoesCnpjDrawer({
     <Sheet>
       <SheetTrigger
         render={
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" className="shrink-0 text-primary">
             Ver {counts.total} registro{counts.total === 1 ? '' : 's'}
+            <ArrowRightIcon className="ml-1 size-3" />
           </Button>
         }
       />

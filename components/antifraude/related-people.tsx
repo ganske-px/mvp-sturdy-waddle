@@ -2,6 +2,7 @@
 
 // components/antifraude/related-people.tsx
 import { deepenDocument } from '@/app/(app)/search/deepen/actions';
+import { EntityListItem } from '@/components/entity-list-item';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,14 +42,11 @@ export function RelatedPeople({
     ) : people.length === 0 ? (
       <p className="text-muted-foreground">Nenhuma pessoa relacionada identificada.</p>
     ) : (
-      <ul className="flex flex-col gap-2">
+      <div>
         {people.map((p, i) => (
-          <li
+          <EntityListItem
             key={`${p.cpfHash}-${i}`}
-            className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-medium">{p.nome ?? 'Nome não informado'}</span>
+            action={
               <Button
                 variant="ghost"
                 size="sm"
@@ -68,14 +66,16 @@ export function RelatedPeople({
                 {p.hasCached ? 'Ver detalhes' : 'Aprofundar'}
                 <ArrowRightIcon className="ml-1 size-3" />
               </Button>
-            </div>
+            }
+          >
+            <span className="font-medium">{p.nome ?? 'Nome não informado'}</span>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">{p.maskedPreview}</span>
               <Badge variant="outline">{relationshipLabel(p.tipoRelacionamento)}</Badge>
             </div>
-          </li>
+          </EntityListItem>
         ))}
-      </ul>
+      </div>
     );
 
   if (bare) return <div className="space-y-2 text-sm">{body}</div>;

@@ -20,22 +20,26 @@ export function MediaCard({
   ) : status === 'error' ? (
     <p className="text-muted-foreground">Indisponível.</p>
   ) : (
-    <>
-      <div className="text-base font-medium">
-        {mencoes ?? 0} <span className="text-muted-foreground text-sm">menções</span>
-      </div>
-      <ul className="space-y-1 text-xs text-muted-foreground">
-        <li>Mídias: {qtdMidias ?? 0}</li>
-        <li>Listas restritivas: {qtdListas ?? 0}</li>
-        <li>Governamentais: {qtdGov ?? 0}</li>
-        <li>Socioambientais: {qtdAmb ?? 0}</li>
-      </ul>
-      {status === 'success' && mediaDetail ? (
-        <div className="-ml-2 pt-1">
-          <MediaDrawer detail={mediaDetail} />
+    <div className="flex items-center justify-between gap-2">
+      <div className="space-y-2">
+        <div>
+          <span className="text-muted-foreground">Menções:</span> {mencoes ?? 0}
         </div>
-      ) : null}
-    </>
+        <div>
+          <span className="text-muted-foreground">Mídias:</span> {qtdMidias ?? 0}
+        </div>
+        <div>
+          <span className="text-muted-foreground">Listas restritivas:</span> {qtdListas ?? 0}
+        </div>
+        <div>
+          <span className="text-muted-foreground">Governamentais:</span> {qtdGov ?? 0}
+        </div>
+        <div>
+          <span className="text-muted-foreground">Socioambientais:</span> {qtdAmb ?? 0}
+        </div>
+      </div>
+      {status === 'success' && mediaDetail ? <MediaDrawer detail={mediaDetail} /> : null}
+    </div>
   );
 
   if (bare) return <div className="space-y-2 text-sm">{body}</div>;

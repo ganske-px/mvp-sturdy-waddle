@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { type EdgeProps, type Node, Position, getBezierPath, useStore } from 'reactflow';
+import { useEdgeHoverState } from './hover-store';
 
 // Floating edges. Default React Flow edges connect to fixed Handle positions
 // (Top/Bottom on our nodes), so when 300 edges all start at the centre node's
@@ -67,7 +68,16 @@ function getEdgeParams(source: RFNode, target: RFNode) {
   };
 }
 
-export function FloatingEdge({ id, source, target, style, markerEnd }: EdgeProps) {
+type FloatingEdgeData = { pathActive?: boolean };
+
+export function FloatingEdge({
+  id,
+  source,
+  target,
+  style,
+  markerEnd,
+  data,
+}: EdgeProps<FloatingEdgeData>) {
   const sourceNode = useStore(
     useCallback((store) => store.nodeInternals.get(source) as RFNode | undefined, [source]),
   );
@@ -75,24 +85,38 @@ export function FloatingEdge({ id, source, target, style, markerEnd }: EdgeProps
     useCallback((store) => store.nodeInternals.get(target) as RFNode | undefined, [target]),
   );
 
-  if (!sourceNode || !targetNode) return null;
+  // Geometry only depends on the node objects (positions/dimensions). Memoizing
+  // on those refs keeps hover restyling from recomputing the bezier path — node
+  // refs stay stable across hovers, so this recomputes only on relayout.
+  const path = useMemo(() => {
+    if (!sourceNode || !targetNode) return null;
+    const { sx, sy, tx, ty, sourcePos, targetPos } = getEdgeParams(sourceNode, targetNode);
+    return getBezierPath({
+      sourceX: sx,
+      sourceY: sy,
+      sourcePosition: sourcePos,
+      targetPosition: targetPos,
+      targetX: tx,
+      targetY: ty,
+    })[0];
+  }, [sourceNode, targetNode]);
 
-  const { sx, sy, tx, ty, sourcePos, targetPos } = getEdgeParams(sourceNode, targetNode);
-  const [path] = getBezierPath({
-    sourceX: sx,
-    sourceY: sy,
-    sourcePosition: sourcePos,
-    targetPosition: targetPos,
-    targetX: tx,
-    targetY: ty,
-  });
+  const hover = useEdgeHoverState(source, target);
+
+  if (!path) return null;
+
+  // While a shortest-path is highlighted, the path styling baked into `style`
+  // wins and hover is ignored (matches node behaviour). Otherwise hover dims
+  // non-incident edges and brightens the incident ones.
+  const resolvedStyle =
+    data?.pathActive || hover === 0 ? style : { ...style, opacity: hover === 1 ? 1 : 0.08 };
 
   return (
     <path
       id={id}
       className="react-flow__edge-path"
       d={path}
-      style={style}
+      style={resolvedStyle}
       markerEnd={markerEnd}
       fill="none"
     />

@@ -23,7 +23,6 @@ export function SancoesCardCnpj({
 }: SancoesCardCnpjProps) {
   const ceisAtivos = (ceis ?? []).filter((c) => c.ativo).length;
   const cnepAtivos = (cnep ?? []).filter((c) => c.ativo).length;
-  const algumProblema = sancionado || ceisAtivos > 0 || cnepAtivos > 0 || trabalhoEscravo;
 
   const body =
     status === 'running' ? (
@@ -36,25 +35,43 @@ export function SancoesCardCnpj({
     ) : status === 'missing' ? (
       <p className="text-muted-foreground">Sem dados.</p>
     ) : (
-      <>
-        {algumProblema ? (
-          <div className="flex flex-wrap gap-1">
-            {sancionado ? <Badge variant="destructive">Sancionado</Badge> : null}
-            {ceisAtivos > 0 ? (
-              <Badge variant="destructive">CEIS: {ceisAtivos} ativo(s)</Badge>
-            ) : null}
-            {cnepAtivos > 0 ? (
-              <Badge variant="destructive">CNEP: {cnepAtivos} ativo(s)</Badge>
-            ) : null}
-            {trabalhoEscravo ? <Badge variant="destructive">Trabalho escravo</Badge> : null}
+      <div className="flex items-center justify-between gap-2">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Sancionado:</span>
+            {sancionado ? (
+              <Badge variant="destructive">Sim</Badge>
+            ) : (
+              <Badge variant="secondary">Não</Badge>
+            )}
           </div>
-        ) : (
-          <Badge variant="success">Sem restrições</Badge>
-        )}
-        <div className="-ml-2 pt-1">
-          <SancoesCnpjDrawer ceis={ceis} cnep={cnep} trabalhoEscravo={trabalhoEscravo} />
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">CEIS:</span>
+            {ceisAtivos > 0 ? (
+              <Badge variant="destructive">{ceisAtivos} ativo(s)</Badge>
+            ) : (
+              <Badge variant="secondary">Nenhum</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">CNEP:</span>
+            {cnepAtivos > 0 ? (
+              <Badge variant="destructive">{cnepAtivos} ativo(s)</Badge>
+            ) : (
+              <Badge variant="secondary">Nenhum</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Trabalho escravo:</span>
+            {trabalhoEscravo ? (
+              <Badge variant="destructive">Sim</Badge>
+            ) : (
+              <Badge variant="secondary">Não</Badge>
+            )}
+          </div>
         </div>
-      </>
+        <SancoesCnpjDrawer ceis={ceis} cnep={cnep} trabalhoEscravo={trabalhoEscravo} />
+      </div>
     );
 
   if (bare) return <div className="space-y-2 text-sm">{body}</div>;

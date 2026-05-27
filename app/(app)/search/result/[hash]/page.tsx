@@ -12,7 +12,7 @@ import { SearchRowRealtime } from '@/components/antifraude/search-row-realtime';
 import { type SocioEntry, SociosCard } from '@/components/antifraude/socios-card';
 import type { RelatedCompanyEntry, RelatedPersonEntry } from '@/components/antifraude/types';
 import { BreadcrumbNetwork } from '@/components/breadcrumb-network';
-import { ProcessResultsTable } from '@/components/process-results-table';
+import { ProcessResultsList } from '@/components/process-results-list';
 import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 import { type RiskVerdict, getRiskVerdict } from '@/lib/graph/risk-verdict';
 import { getSubgraphStats } from '@/lib/graph/subgraph-stats';
@@ -558,6 +558,7 @@ export default async function ResultPage({
               stats={networkStats}
               networkHash={networkHash}
               canSeeNetwork={canSeeNetwork}
+              currentPath={currentPath || documentHash}
             />
           </div>
 
@@ -565,7 +566,7 @@ export default async function ResultPage({
           <ResultSection
             title="Processos judiciais"
             icon={<FileTextIcon className="size-4" />}
-            defaultOpen
+            defaultOpen={searchRow.result_count <= 5}
             summary={`${searchRow.result_count} processo${searchRow.result_count === 1 ? '' : 's'}`}
           >
             {searchRow.error_message ? (
@@ -601,7 +602,7 @@ export default async function ResultPage({
                 </p>
               </div>
             ) : (
-              <ProcessResultsTable results={cached.results} />
+              <ProcessResultsList results={cached.results} />
             )}
           </ResultSection>
 
@@ -732,6 +733,7 @@ export default async function ResultPage({
             stats={networkStats}
             networkHash={networkHash}
             canSeeNetwork={canSeeNetwork}
+            currentPath={currentPath || documentHash}
           />
         </div>
       </div>

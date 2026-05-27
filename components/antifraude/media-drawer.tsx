@@ -12,7 +12,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import type { MediaDetail, MediaListItem } from '@/lib/netrin/parsers/media-detail';
-import { ExternalLinkIcon } from 'lucide-react';
+import { ArrowRightIcon, ExternalLinkIcon } from 'lucide-react';
 import { ExpandableText } from './expandable-text';
 
 function ListSection({ title, items }: { title: string; items: MediaListItem[] }) {
@@ -53,8 +53,9 @@ export function MediaDrawer({ detail }: { detail: MediaDetail }) {
     <Sheet>
       <SheetTrigger
         render={
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" className="shrink-0 text-primary">
             Ver menções
+            <ArrowRightIcon className="ml-1 size-3" />
           </Button>
         }
       />
