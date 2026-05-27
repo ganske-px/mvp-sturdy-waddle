@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { decryptLabel, encryptLabel } from './label-crypto';
+import { decryptLabel, decryptLabels, encryptLabel } from './label-crypto';
 
-function buildFakeClient(opts: { encryptError?: string; decryptError?: string } = {}) {
+function buildFakeClient(
+  opts: {
+    encryptError?: string;
+    decryptError?: string;
+    decryptLabelsError?: string;
+    decryptLabelsResult?: string[];
+  } = {},
+) {
   const calls: Array<{ name: string; params: unknown }> = [];
   return {
     calls,
@@ -22,6 +29,15 @@ function buildFakeClient(opts: { encryptError?: string; decryptError?: string } 
             data: String(params.ciphertext).replace(/^cipher:/, ''),
             error: null,
           });
+        }
+        if (name === 'decrypt_graph_labels') {
+          if (opts.decryptLabelsError) {
+            return Promise.resolve({ data: null, error: { message: opts.decryptLabelsError } });
+          }
+          const ciphertexts = params.ciphertexts as string[];
+          const result =
+            opts.decryptLabelsResult ?? ciphertexts.map((c) => c.replace(/^cipher:/, ''));
+          return Promise.resolve({ data: result, error: null });
         }
         throw new Error(`unexpected rpc: ${name}`);
       },
@@ -53,5 +69,29 @@ describe('decryptLabel', () => {
   it('throws when the RPC fails', async () => {
     const { client } = buildFakeClient({ decryptError: 'no secret' });
     await expect(decryptLabel(client as never, 'whatever')).rejects.toThrow(/no secret/);
+  });
+});
+
+describe('decryptLabels', () => {
+  it('returns [] for empty input without calling rpc', async () => {
+    const { client, calls } = buildFakeClient();
+    const result = await decryptLabels(client as never, []);
+    expect(result).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('calls decrypt_graph_labels and returns plaintext array in order', async () => {
+    const { client, calls } = buildFakeClient();
+    const ciphertexts = ['cipher:{"name":"A"}', 'cipher:{"name":"B"}', 'cipher:{"name":"C"}'];
+    const result = await decryptLabels(client as never, ciphertexts);
+    expect(result).toEqual(['{"name":"A"}', '{"name":"B"}', '{"name":"C"}']);
+    expect(calls).toEqual([{ name: 'decrypt_graph_labels', params: { ciphertexts } }]);
+  });
+
+  it('throws an error starting with "decryptLabels failed:" when rpc returns error', async () => {
+    const { client } = buildFakeClient({ decryptLabelsError: 'vault key missing' });
+    await expect(decryptLabels(client as never, ['cipher:x'])).rejects.toThrow(
+      /^decryptLabels failed:/,
+    );
   });
 });

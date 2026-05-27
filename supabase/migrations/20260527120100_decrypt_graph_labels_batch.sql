@@ -7,6 +7,8 @@ create or replace function public.decrypt_graph_labels(ciphertexts text[])
 returns text[]
 language plpgsql
 security definer
+-- Sem 'vault' no search_path: esta função não lê o vault diretamente; delega a
+-- public.decrypt_graph_label (security definer, com vault no próprio search_path).
 set search_path = public, extensions
 as $$
 declare

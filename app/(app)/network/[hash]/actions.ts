@@ -83,14 +83,7 @@ async function fetchNodesInChunks(supabase: ServerClient, hashes: string[]): Pro
   return result;
 }
 
-async function rowToDto(admin: AdminClient, row: NodeRow): Promise<GraphNodeDto> {
-  let label: GraphNodeLabel = {};
-  try {
-    const plaintext = await decryptLabel(admin, row.encrypted_label);
-    label = JSON.parse(plaintext) as GraphNodeLabel;
-  } catch (e) {
-    console.warn('label decrypt failed; falling back to masked preview:', e);
-  }
+function nodeRowToDto(row: NodeRow, label: GraphNodeLabel): GraphNodeDto {
   return {
     hash: row.node_hash,
     type: row.node_type,
@@ -100,6 +93,17 @@ async function rowToDto(admin: AdminClient, row: NodeRow): Promise<GraphNodeDto>
     hasSanction: row.has_sanction,
     lastSeenAt: row.last_seen_at,
   };
+}
+
+async function rowToDto(admin: AdminClient, row: NodeRow): Promise<GraphNodeDto> {
+  let label: GraphNodeLabel = {};
+  try {
+    const plaintext = await decryptLabel(admin, row.encrypted_label);
+    label = JSON.parse(plaintext) as GraphNodeLabel;
+  } catch (e) {
+    console.warn('label decrypt failed; falling back to masked preview:', e);
+  }
+  return nodeRowToDto(row, label);
 }
 
 async function rowsToDtosBatched(admin: AdminClient, rows: NodeRow[]): Promise<GraphNodeDto[]> {
@@ -116,19 +120,12 @@ async function rowsToDtosBatched(admin: AdminClient, rows: NodeRow[]): Promise<G
   return rows.map((row, i) => {
     let label: GraphNodeLabel = {};
     try {
-      if (plaintexts[i]) label = JSON.parse(plaintexts[i] as string) as GraphNodeLabel;
+      const pt = plaintexts[i];
+      if (pt != null) label = JSON.parse(pt) as GraphNodeLabel;
     } catch (e) {
       console.warn('label parse failed; using masked preview:', e);
     }
-    return {
-      hash: row.node_hash,
-      type: row.node_type,
-      label,
-      maskedPreview: row.masked_preview,
-      isPep: row.is_pep,
-      hasSanction: row.has_sanction,
-      lastSeenAt: row.last_seen_at,
-    };
+    return nodeRowToDto(row, label);
   });
 }
 
