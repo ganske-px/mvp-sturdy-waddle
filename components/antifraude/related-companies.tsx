@@ -22,8 +22,8 @@ export function RelatedCompanies({ status, items, currentPath, bare }: RelatedCo
   ) : items.length === 0 ? (
     <p className="text-muted-foreground">Nenhuma empresa vinculada.</p>
   ) : (
-    items.map((c) => (
-      <div key={c.cnpj} className="border-t pt-2 first:border-t-0 first:pt-0">
+    items.map((c, i) => (
+      <div key={`${c.cnpj}-${i}`} className="border-t pt-2 first:border-t-0 first:pt-0">
         <div className="flex items-center gap-2 flex-wrap justify-between">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">{c.razaoSocial ?? 'Empresa'}</span>

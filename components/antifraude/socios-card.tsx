@@ -43,9 +43,9 @@ export function SociosCard({ status, parentCnpjHash, currentPath, socios, bare }
       <p className="text-muted-foreground">Nenhum sócio identificado.</p>
     ) : (
       <ul className="flex flex-col gap-2">
-        {socios.map((s) => (
+        {socios.map((s, i) => (
           <li
-            key={s.cpfHash}
+            key={`${s.cpfHash}-${i}`}
             className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
           >
             <div className="flex flex-col gap-0.5">

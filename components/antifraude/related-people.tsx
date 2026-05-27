@@ -42,9 +42,9 @@ export function RelatedPeople({
       <p className="text-muted-foreground">Nenhuma pessoa relacionada identificada.</p>
     ) : (
       <ul className="flex flex-col gap-2">
-        {people.map((p) => (
+        {people.map((p, i) => (
           <li
-            key={p.cpfHash}
+            key={`${p.cpfHash}-${i}`}
             className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
           >
             <div className="flex flex-col gap-0.5">

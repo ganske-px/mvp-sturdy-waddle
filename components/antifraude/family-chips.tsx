@@ -21,9 +21,9 @@ export function FamilyChips({ people, parentCpfHash, currentPath }: FamilyChipsP
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Núcleo familiar
       </span>
-      {people.map((p) => (
+      {people.map((p, i) => (
         <button
-          key={p.cpfHash}
+          key={`${p.cpfHash}-${i}`}
           type="button"
           disabled={isPending}
           onClick={() => {
