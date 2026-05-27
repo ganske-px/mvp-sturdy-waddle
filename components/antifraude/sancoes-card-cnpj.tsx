@@ -2,6 +2,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SancoesCnpjDrawer } from './sancoes-cnpj-drawer';
 
 export type SancoesCardCnpjProps = {
   status: 'missing' | 'running' | 'success' | 'error';
@@ -34,15 +35,26 @@ export function SancoesCardCnpj({
       <p className="text-muted-foreground">Indisponível.</p>
     ) : status === 'missing' ? (
       <p className="text-muted-foreground">Sem dados.</p>
-    ) : !algumProblema ? (
-      <Badge variant="success">Sem restrições</Badge>
     ) : (
-      <div className="flex flex-wrap gap-1">
-        {sancionado ? <Badge variant="destructive">Sancionado</Badge> : null}
-        {ceisAtivos > 0 ? <Badge variant="destructive">CEIS: {ceisAtivos} ativo(s)</Badge> : null}
-        {cnepAtivos > 0 ? <Badge variant="destructive">CNEP: {cnepAtivos} ativo(s)</Badge> : null}
-        {trabalhoEscravo ? <Badge variant="destructive">Trabalho escravo</Badge> : null}
-      </div>
+      <>
+        {algumProblema ? (
+          <div className="flex flex-wrap gap-1">
+            {sancionado ? <Badge variant="destructive">Sancionado</Badge> : null}
+            {ceisAtivos > 0 ? (
+              <Badge variant="destructive">CEIS: {ceisAtivos} ativo(s)</Badge>
+            ) : null}
+            {cnepAtivos > 0 ? (
+              <Badge variant="destructive">CNEP: {cnepAtivos} ativo(s)</Badge>
+            ) : null}
+            {trabalhoEscravo ? <Badge variant="destructive">Trabalho escravo</Badge> : null}
+          </div>
+        ) : (
+          <Badge variant="success">Sem restrições</Badge>
+        )}
+        <div className="-ml-2 pt-1">
+          <SancoesCnpjDrawer ceis={ceis} cnep={cnep} trabalhoEscravo={trabalhoEscravo} />
+        </div>
+      </>
     );
 
   if (bare) return <div className="space-y-2 text-sm">{body}</div>;

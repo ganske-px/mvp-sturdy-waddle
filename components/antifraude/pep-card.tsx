@@ -2,6 +2,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PepSancoesDrawer } from './pep-sancoes-drawer';
 import type { PepCardProps } from './types';
 
 export function PepCard({
@@ -10,6 +11,8 @@ export function PepCard({
   currentlySanctioned,
   previouslySanctioned,
   historicoCount,
+  sanctions,
+  pepHistory,
   bare,
 }: PepCardProps) {
   const skeleton = status === 'pending' || status === 'running';
@@ -47,6 +50,15 @@ export function PepCard({
       <div>
         <span className="text-muted-foreground">Histórico:</span> {historicoCount ?? 0} registros
       </div>
+      {status === 'success' ? (
+        <div className="-ml-2 pt-1">
+          <PepSancoesDrawer
+            sanctions={sanctions ?? []}
+            pepHistory={pepHistory ?? []}
+            currentlySanctioned={currentlySanctioned}
+          />
+        </div>
+      ) : null}
     </>
   );
 

@@ -1,6 +1,7 @@
 // components/antifraude/media-card.tsx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MediaDrawer } from './media-drawer';
 import type { MediaCardProps } from './types';
 
 export function MediaCard({
@@ -10,6 +11,7 @@ export function MediaCard({
   qtdListas,
   qtdGov,
   qtdAmb,
+  mediaDetail,
   bare,
 }: MediaCardProps) {
   const skeleton = status === 'pending' || status === 'running';
@@ -28,6 +30,11 @@ export function MediaCard({
         <li>Governamentais: {qtdGov ?? 0}</li>
         <li>Socioambientais: {qtdAmb ?? 0}</li>
       </ul>
+      {status === 'success' && mediaDetail ? (
+        <div className="-ml-2 pt-1">
+          <MediaDrawer detail={mediaDetail} />
+        </div>
+      ) : null}
     </>
   );
 

@@ -17,8 +17,11 @@ import { listUserPermissions, requireAuth } from '@/lib/auth/permissions';
 import { type RiskVerdict, getRiskVerdict } from '@/lib/graph/risk-verdict';
 import { getSubgraphStats } from '@/lib/graph/subgraph-stats';
 import { hashDocument } from '@/lib/hash';
+import { extractMediaDetail } from '@/lib/netrin/parsers/media-detail';
+import { extractPepHistory } from '@/lib/netrin/parsers/pep-detail';
 import { extractRelatedCpfs } from '@/lib/netrin/parsers/related-cpfs';
 import { extractCnpjRisk, extractCpfRisk, isSim } from '@/lib/netrin/parsers/risk-flags';
+import { extractSanctions } from '@/lib/netrin/parsers/sanctions-detail';
 import { isFirstDegree } from '@/lib/netrin/relationship-labels';
 import { loadEnrichmentForRoot } from '@/lib/netrin/result-loader';
 import type { NetrinCompositePayload } from '@/lib/netrin/types';
@@ -476,6 +479,12 @@ export default async function ResultPage({
   const cnpjMediaProps = cnpjRootPayload ? extractMediaFromHop1(cnpjRootPayload) : null;
   const socios = cnpjRootPayload ? extractSocios(cnpjRootPayload, cachedCpfHashes) : [];
 
+  // Detailed records for the drawers
+  const sanctions = hop1 ? extractSanctions(hop1) : [];
+  const pepHistory = hop1 ? extractPepHistory(hop1) : [];
+  const mediaDetail = hop1 ? extractMediaDetail(hop1) : null;
+  const cnpjMediaDetail = cnpjRootPayload ? extractMediaDetail(cnpjRootPayload) : null;
+
   // Status for cards: if job exists but is still running, show skeleton state
   const jobRunning = job?.status === 'pending' || job?.status === 'running';
   // For CNPJ root, use cnpjRootPayload as the data presence indicator instead of hop1
@@ -613,6 +622,7 @@ export default async function ResultPage({
                     qtdListas={mediaProps?.qtdListas}
                     qtdGov={mediaProps?.qtdGov}
                     qtdAmb={mediaProps?.qtdAmb}
+                    mediaDetail={mediaDetail ?? undefined}
                   />
                 </ResultSection>
 
@@ -628,6 +638,8 @@ export default async function ResultPage({
                     currentlySanctioned={pepProps?.currentlySanctioned}
                     previouslySanctioned={pepProps?.previouslySanctioned}
                     historicoCount={pepProps?.historicoCount}
+                    sanctions={sanctions}
+                    pepHistory={pepHistory}
                   />
                 </ResultSection>
 
@@ -677,6 +689,7 @@ export default async function ResultPage({
                     qtdListas={cnpjMediaProps?.qtdListas}
                     qtdGov={cnpjMediaProps?.qtdGov}
                     qtdAmb={cnpjMediaProps?.qtdAmb}
+                    mediaDetail={cnpjMediaDetail ?? undefined}
                   />
                 </ResultSection>
 

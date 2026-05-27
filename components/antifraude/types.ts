@@ -1,4 +1,8 @@
 // components/antifraude/types.ts
+import type { MediaDetail } from '@/lib/netrin/parsers/media-detail';
+import type { PepHistoryEntry } from '@/lib/netrin/parsers/pep-detail';
+import type { SanctionMatch } from '@/lib/netrin/parsers/sanctions-detail';
+
 export type AntifraudeStatus =
   | 'pending'
   | 'running'
@@ -23,6 +27,8 @@ export type PepCardProps = {
   currentlySanctioned?: boolean;
   previouslySanctioned?: boolean;
   historicoCount?: number;
+  sanctions?: SanctionMatch[];
+  pepHistory?: PepHistoryEntry[];
   bare?: boolean;
 };
 
@@ -33,6 +39,7 @@ export type MediaCardProps = {
   qtdListas?: number;
   qtdGov?: number;
   qtdAmb?: number;
+  mediaDetail?: MediaDetail;
   bare?: boolean;
 };
 
