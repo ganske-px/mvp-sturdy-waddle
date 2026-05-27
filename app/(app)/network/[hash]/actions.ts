@@ -3,7 +3,7 @@
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
 import { planNodeInvestigation } from '@/lib/graph/investigate-plan';
-import { decryptLabel } from '@/lib/graph/label-crypto';
+import { decryptLabel, decryptLabels } from '@/lib/graph/label-crypto';
 import { buildPathResult } from '@/lib/graph/path-result';
 import type { EdgeKind, GraphNodeLabel, NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
 import { hashDocument } from '@/lib/hash';
@@ -19,9 +19,6 @@ import { redirect } from 'next/navigation';
 // past ~370 hashes blew the URL past fetch's limit ("TypeError: fetch failed").
 // Chunk to 100 — comfortably below the limit and only a few round-trips.
 const HASH_QUERY_BATCH = 100;
-// decryptLabel is one RPC round-trip per node; serial loops would balloon the
-// page render to minutes on dense subgraphs.
-const DECRYPT_BATCH = 50;
 
 export type GraphNodeDto = {
   hash: string;
@@ -106,13 +103,33 @@ async function rowToDto(admin: AdminClient, row: NodeRow): Promise<GraphNodeDto>
 }
 
 async function rowsToDtosBatched(admin: AdminClient, rows: NodeRow[]): Promise<GraphNodeDto[]> {
-  const result: GraphNodeDto[] = [];
-  for (let i = 0; i < rows.length; i += DECRYPT_BATCH) {
-    const batch = rows.slice(i, i + DECRYPT_BATCH);
-    const dtos = await Promise.all(batch.map((r) => rowToDto(admin, r)));
-    result.push(...dtos);
+  if (rows.length === 0) return [];
+  let plaintexts: string[] = [];
+  try {
+    plaintexts = await decryptLabels(
+      admin,
+      rows.map((r) => r.encrypted_label),
+    );
+  } catch (e) {
+    console.warn('batch label decrypt failed; falling back to masked previews:', e);
   }
-  return result;
+  return rows.map((row, i) => {
+    let label: GraphNodeLabel = {};
+    try {
+      if (plaintexts[i]) label = JSON.parse(plaintexts[i] as string) as GraphNodeLabel;
+    } catch (e) {
+      console.warn('label parse failed; using masked preview:', e);
+    }
+    return {
+      hash: row.node_hash,
+      type: row.node_type,
+      label,
+      maskedPreview: row.masked_preview,
+      isPep: row.is_pep,
+      hasSanction: row.has_sanction,
+      lastSeenAt: row.last_seen_at,
+    };
+  });
 }
 
 export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {

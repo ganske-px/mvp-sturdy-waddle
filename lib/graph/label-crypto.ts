@@ -18,3 +18,18 @@ export async function decryptLabel(
   if (error) throw new Error(`decryptLabel failed: ${error.message}`);
   return data as unknown as string;
 }
+
+export async function decryptLabels(
+  client: SupabaseClient<Database>,
+  ciphertexts: string[],
+): Promise<string[]> {
+  if (ciphertexts.length === 0) return [];
+  const { data, error } = await client.rpc(
+    'decrypt_graph_labels' as never,
+    {
+      ciphertexts,
+    } as never,
+  );
+  if (error) throw new Error(`decryptLabels failed: ${error.message}`);
+  return data as unknown as string[];
+}
