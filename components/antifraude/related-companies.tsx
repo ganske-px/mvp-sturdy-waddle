@@ -1,3 +1,5 @@
+'use client';
+
 // components/antifraude/related-companies.tsx
 import { deepenDocument } from '@/app/(app)/search/deepen/actions';
 import { Badge } from '@/components/ui/badge';
@@ -6,20 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { mask as maskCnpj } from '@/lib/validators/cnpj';
 import { ArrowRightIcon } from 'lucide-react';
+import { useTransition } from 'react';
 import type { RelatedCompaniesProps } from './types';
 
-async function handleDeepen(formData: FormData) {
-  'use server';
-  const cnpjRaw = String(formData.get('cnpjRaw') ?? '');
-  const currentPath = String(formData.get('currentPath') ?? '');
-  await deepenDocument({
-    docType: 'cnpj',
-    cnpjRaw,
-    currentPath: currentPath || undefined,
-  });
-}
-
 export function RelatedCompanies({ status, items, currentPath, bare }: RelatedCompaniesProps) {
+  const [isPending, startTransition] = useTransition();
   const skeleton = status === 'pending' || status === 'running';
   const body = skeleton ? (
     <>
@@ -38,14 +31,24 @@ export function RelatedCompanies({ status, items, currentPath, bare }: RelatedCo
             {c.vinculo ? <Badge variant="outline">{c.vinculo}</Badge> : null}
             {!c.ativo ? <Badge variant="secondary">encerrado</Badge> : null}
           </div>
-          <form action={handleDeepen}>
-            <input type="hidden" name="cnpjRaw" value={c.cnpj} />
-            <input type="hidden" name="currentPath" value={currentPath ?? ''} />
-            <Button type="submit" size="sm" variant={c.hop2 ? 'outline' : 'default'}>
-              {c.hop2 ? 'Ver detalhes' : 'Aprofundar'}
-              <ArrowRightIcon className="ml-1 size-3" />
-            </Button>
-          </form>
+          <Button
+            type="button"
+            size="sm"
+            variant={c.hop2 ? 'outline' : 'default'}
+            disabled={isPending}
+            onClick={() => {
+              startTransition(async () => {
+                await deepenDocument({
+                  docType: 'cnpj',
+                  cnpjRaw: c.cnpj,
+                  currentPath,
+                });
+              });
+            }}
+          >
+            {c.hop2 ? 'Ver detalhes' : 'Aprofundar'}
+            <ArrowRightIcon className="ml-1 size-3" />
+          </Button>
         </div>
         {c.hop2 ? (
           <div className="text-xs text-muted-foreground mt-1 flex gap-3 flex-wrap">
