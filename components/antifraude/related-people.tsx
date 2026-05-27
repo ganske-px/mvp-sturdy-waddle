@@ -45,33 +45,34 @@ export function RelatedPeople({
         {people.map((p, i) => (
           <li
             key={`${p.cpfHash}-${i}`}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
+            className="flex flex-col gap-2 rounded-md border border-border/60 px-3 py-2"
           >
-            <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between gap-2">
               <span className="font-medium">{p.nome ?? 'Nome não informado'}</span>
-              <span className="text-xs text-muted-foreground">{p.maskedPreview}</span>
-              <div className="flex flex-wrap gap-1">
-                <Badge variant="outline">{relationshipLabel(p.tipoRelacionamento)}</Badge>
-              </div>
-            </div>
-            <Button
-              variant={p.hasCached ? 'outline' : 'default'}
-              size="sm"
-              disabled={isPending}
-              onClick={() => {
-                startTransition(async () => {
-                  await deepenDocument({
-                    docType: 'cpf-relacionado',
-                    cpfHash: p.cpfHash,
-                    parentCpfHash,
-                    currentPath,
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isPending}
+                className="shrink-0 text-primary"
+                onClick={() => {
+                  startTransition(async () => {
+                    await deepenDocument({
+                      docType: 'cpf-relacionado',
+                      cpfHash: p.cpfHash,
+                      parentCpfHash,
+                      currentPath,
+                    });
                   });
-                });
-              }}
-            >
-              {p.hasCached ? 'Ver detalhes' : 'Aprofundar'}
-              <ArrowRightIcon className="ml-1 size-3" />
-            </Button>
+                }}
+              >
+                {p.hasCached ? 'Ver detalhes' : 'Aprofundar'}
+                <ArrowRightIcon className="ml-1 size-3" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">{p.maskedPreview}</span>
+              <Badge variant="outline">{relationshipLabel(p.tipoRelacionamento)}</Badge>
+            </div>
           </li>
         ))}
       </ul>

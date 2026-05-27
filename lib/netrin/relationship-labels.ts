@@ -16,7 +16,8 @@ export const RELATIONSHIP_LABELS: Record<string, string> = {
   NIECE: 'Sobrinho(a)',
   COUSIN: 'Primo(a)',
   SPOUSE: 'Cônjuge',
-  PARTNER: 'Companheiro(a)',
+  // A fonte usa PARTNER para vínculo societário (sócio), não companheiro afetivo.
+  PARTNER: 'Sócio(a)',
   IN_LAW: 'Parente por afinidade',
 };
 
@@ -25,16 +26,7 @@ export function relationshipLabel(tipo?: string): string {
   return RELATIONSHIP_LABELS[tipo] ?? 'Vínculo familiar';
 }
 
-const FIRST_DEGREE = new Set([
-  'MOTHER',
-  'FATHER',
-  'PARENT',
-  'SPOUSE',
-  'PARTNER',
-  'SON',
-  'DAUGHTER',
-  'CHILD',
-]);
+const FIRST_DEGREE = new Set(['MOTHER', 'FATHER', 'PARENT', 'SPOUSE', 'SON', 'DAUGHTER', 'CHILD']);
 
 /** Parentes do núcleo próximo, exibidos no hero de identidade. */
 export function isFirstDegree(tipo?: string): boolean {
