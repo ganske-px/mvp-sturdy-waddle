@@ -260,3 +260,6 @@ legacy-streamlit/data/
 legacy-streamlit/.streamlit/secrets.toml
 legacy-streamlit/secrets.toml
 data/historico_pesquisas.json
+
+# Visual brainstorm companion (superpowers)
+.superpowers/
