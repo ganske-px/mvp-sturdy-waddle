@@ -54,4 +54,8 @@ describe('findNearestRisk', () => {
   it('sem arriscados → none', () => {
     expect(findNearestRisk(edges, 'a', new Set(), 3).level).toBe('none');
   });
+
+  it('centro fora de qualquer aresta → none', () => {
+    expect(findNearestRisk([], 'x', new Set(['x', 'y']), 3).level).toBe('none');
+  });
 });

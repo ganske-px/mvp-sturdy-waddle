@@ -10,7 +10,12 @@ export type NearestRisk = {
   level: RiskLevel;
 };
 
-const NOT_FOUND: NearestRisk = { found: false, targetHash: null, distance: 0, level: 'none' };
+const NOT_FOUND: NearestRisk = Object.freeze({
+  found: false,
+  targetHash: null,
+  distance: 0,
+  level: 'none',
+});
 
 /**
  * BFS por nível a partir de `centerHash` sobre uma lista de arestas não-direcionada,
