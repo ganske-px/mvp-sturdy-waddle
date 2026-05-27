@@ -2,17 +2,18 @@
 
 import { extractRequestContext, writeAuditLog } from '@/lib/audit';
 import { requirePermission } from '@/lib/auth/permissions';
+import { planNodeInvestigation } from '@/lib/graph/investigate-plan';
 import { decryptLabel } from '@/lib/graph/label-crypto';
 import { buildPathResult } from '@/lib/graph/path-result';
 import type { EdgeKind, GraphNodeLabel, NodeType, StoredEdgeEvidence } from '@/lib/graph/types';
 import { hashDocument } from '@/lib/hash';
-import { setCachedResults } from '@/lib/predictus/cache';
-import { createServerPredictusClient } from '@/lib/predictus/server-client';
+import { runCnpjSearch, runCpfSearch } from '@/lib/predictus/run-search';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import type { Database } from '@/lib/supabase/types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
 
 // Each hash is 64 chars; PostgREST .in() builds a URL-encoded list, and going
 // past ~370 hashes blew the URL past fetch's limit ("TypeError: fetch failed").
@@ -223,79 +224,6 @@ export async function getSubgraph(centerHash: string): Promise<SubgraphDto> {
   };
 }
 
-export async function expandNode(
-  hash: string,
-): Promise<{ subgraph: SubgraphDto; usedPredictus: boolean }> {
-  const user = await requirePermission('search_network');
-  const admin = createAdminClient();
-  const supabase = await createClient();
-
-  const { data: row } = await supabase
-    .from('graph_nodes')
-    .select('node_hash, node_type, encrypted_label')
-    .eq('node_hash', hash)
-    .maybeSingle()
-    .returns<{ node_hash: string; node_type: NodeType; encrypted_label: string }>();
-
-  if (!row) {
-    const subgraph = await getSubgraph(hash);
-    return { subgraph, usedPredictus: false };
-  }
-
-  // Lawyers cannot be expanded online: Predictus has no search-by-OAB endpoint.
-  if (row.node_type === 'lawyer') {
-    const subgraph = await getSubgraph(hash);
-    return { subgraph, usedPredictus: false };
-  }
-
-  const nowIso = new Date().toISOString();
-  const { data: cacheRow } = await supabase
-    .from('predictus_cache')
-    .select('document_hash')
-    .eq('document_hash', hash)
-    .gt('expires_at', nowIso)
-    .maybeSingle()
-    .returns<{ document_hash: string }>();
-
-  if (cacheRow) {
-    const subgraph = await getSubgraph(hash);
-    return { subgraph, usedPredictus: false };
-  }
-
-  // Need to call Predictus: decrypt the label to recover the raw document.
-  const plaintext = await decryptLabel(admin, row.encrypted_label);
-  const label = JSON.parse(plaintext) as GraphNodeLabel;
-  if (!label.document) {
-    const subgraph = await getSubgraph(hash);
-    return { subgraph, usedPredictus: false };
-  }
-
-  const requestContext = extractRequestContext(await headers());
-  await writeAuditLog(
-    {
-      userId: user.id,
-      action: 'expand_network_node',
-      documentHash: hash,
-      metadata: { used_predictus: true, expanded_hash: hash },
-      ip: requestContext.ip,
-      userAgent: requestContext.userAgent,
-    },
-    admin,
-    { allowFailure: true },
-  );
-
-  const client = await createServerPredictusClient();
-  const results =
-    row.node_type === 'cpf'
-      ? await client.searchByCpf(label.document)
-      : await client.searchByCnpj(label.document);
-
-  await setCachedResults(admin, hash, row.node_type, results);
-
-  const subgraph = await getSubgraph(hash);
-  return { subgraph, usedPredictus: true };
-}
-
 export type PathBetweenDto = {
   found: boolean;
   nodes: GraphNodeDto[];
@@ -353,4 +281,58 @@ export async function findPathToDocument(
   await requirePermission('search_network');
   const targetHash = hashDocument(type, rawValue);
   return findPathBetween(centerHash, targetHash);
+}
+
+export type InvestigateResult = { ok: false; error: string };
+
+/**
+ * Dispara a investigação completa (Predictus async + Netrin) a partir de um nó
+ * da rede. O documento em claro é recuperado do `encrypted_label` no servidor —
+ * nunca confiando em input do cliente. Em sucesso, redireciona para a página de
+ * resultado (que renderiza skeleton + realtime enquanto a busca está pending) e
+ * a função não retorna. Só retorna em caso de erro.
+ */
+export async function investigateNode(hash: string): Promise<InvestigateResult> {
+  // Server Actions are HTTP endpoints: gate `search_network` here too — não basta
+  // a página de rede estar protegida. A permissão por tipo de busca vem depois,
+  // quando já se conhece o node_type.
+  const user = await requirePermission('search_network');
+
+  const supabase = await createClient();
+  const admin = createAdminClient();
+  const { data: row } = await supabase
+    .from('graph_nodes')
+    .select('node_hash, node_type, encrypted_label')
+    .eq('node_hash', hash)
+    .maybeSingle()
+    .returns<{ node_hash: string; node_type: NodeType; encrypted_label: string }>();
+  if (!row) return { ok: false, error: 'Nó não encontrado na rede.' };
+
+  let document: string | undefined;
+  try {
+    const label = JSON.parse(await decryptLabel(admin, row.encrypted_label)) as GraphNodeLabel;
+    document = label.document;
+  } catch (e) {
+    console.warn('investigateNode label decrypt failed:', e);
+  }
+
+  const plan = planNodeInvestigation({ type: row.node_type, document });
+  if (!plan.ok) return plan;
+
+  await requirePermission(plan.type === 'cpf' ? 'search_person' : 'search_company');
+
+  const requestContext = extractRequestContext(await headers());
+  const ctx = {
+    userId: user.id,
+    admin,
+    supabase,
+    ip: requestContext.ip ?? null,
+    userAgent: requestContext.userAgent ?? null,
+  };
+  const result =
+    plan.type === 'cpf'
+      ? await runCpfSearch(plan.document, ctx)
+      : await runCnpjSearch(plan.document, ctx);
+  if (!result.ok) return result;
+  redirect(`/search/result/${encodeURIComponent(result.documentHash)}`);
 }
