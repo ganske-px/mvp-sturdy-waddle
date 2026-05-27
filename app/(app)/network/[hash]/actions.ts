@@ -11,11 +11,8 @@ import { createServerPredictusClient } from '@/lib/predictus/server-client';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import type { Database } from '@/lib/supabase/types';
-import { isValid as isCnpjValid } from '@/lib/validators/cnpj';
-import { isValid as isCpfValid } from '@/lib/validators/cpf';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { headers } from 'next/headers';
-import { redirect } from 'next/navigation';
 
 // Each hash is 64 chars; PostgREST .in() builds a URL-encoded list, and going
 // past ~370 hashes blew the URL past fetch's limit ("TypeError: fetch failed").
@@ -297,19 +294,6 @@ export async function expandNode(
 
   const subgraph = await getSubgraph(hash);
   return { subgraph, usedPredictus: true };
-}
-
-export async function navigateToNetwork(formData: FormData): Promise<void> {
-  await requirePermission('search_network');
-  const value = String(formData.get('q') ?? '').trim();
-  if (isCpfValid(value)) {
-    redirect(`/network/${encodeURIComponent(hashDocument('cpf', value))}`);
-  }
-  if (isCnpjValid(value)) {
-    redirect(`/network/${encodeURIComponent(hashDocument('cnpj', value))}`);
-  }
-  // Stay on the same page; the header re-renders. We just no-op for invalid input.
-  redirect(`/network/_invalid?q=${encodeURIComponent(value)}`);
 }
 
 export type PathBetweenDto = {
