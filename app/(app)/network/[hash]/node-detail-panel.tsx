@@ -1,0 +1,419 @@
+'use client';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { W_DIV } from '@/lib/graph/edge-weight';
+import type { ShortestPath } from '@/lib/graph/path';
+import type {
+  CorporateEdgeEvidence,
+  FamilyEdgeEvidence,
+  StoredEdgeEvidence,
+} from '@/lib/graph/types';
+import { relationshipLabel } from '@/lib/netrin/relationship-labels';
+import { ArrowRight, Eye, MapPin, Route, X } from 'lucide-react';
+import Link from 'next/link';
+import { useState } from 'react';
+import type { GraphEdgeDto, GraphNodeDto } from './actions';
+import { InvestigateButton } from './investigate-button';
+
+function isProcessEvidence(
+  ev: StoredEdgeEvidence,
+): ev is Extract<StoredEdgeEvidence, { occurrences: number }> {
+  return 'occurrences' in ev;
+}
+
+function isCorporateEvidence(ev: StoredEdgeEvidence): ev is CorporateEdgeEvidence {
+  return 'vinculo' in ev;
+}
+
+function isFamilyEvidence(ev: StoredEdgeEvidence): ev is FamilyEdgeEvidence {
+  return 'tipoRelacionamento' in ev;
+}
+
+function edgeKindLabel(e: GraphEdgeDto): string {
+  switch (e.kind) {
+    case 'co_party':
+      return 'Co-parte';
+    case 'client_lawyer':
+      return 'Representação';
+    case 'lawyer_lawyer':
+      return 'Advogado ↔ advogado';
+    case 'corporate_relation':
+      return 'Vínculo societário';
+    case 'family_relation':
+      return isFamilyEvidence(e.evidence)
+        ? relationshipLabel(e.evidence.tipoRelacionamento)
+        : 'Vínculo familiar';
+  }
+}
+
+type Tab = 'visao' | 'caminhos';
+
+const TAB_LABEL: Record<Tab, string> = {
+  visao: 'Visão',
+  caminhos: 'Caminhos',
+};
+
+const TAB_ICON: Record<Tab, typeof Eye> = {
+  visao: Eye,
+  caminhos: Route,
+};
+
+function formatDoc(node: GraphNodeDto): string | null {
+  if (node.type === 'cpf' && node.label.document) {
+    return node.label.document.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  }
+  if (node.type === 'cnpj' && node.label.document) {
+    return node.label.document.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+  }
+  if (node.type === 'lawyer' && node.label.oab) {
+    return `OAB/${node.label.oab.uf} ${node.label.oab.numero}`;
+  }
+  return null;
+}
+
+function VisaoTab({
+  node,
+  center,
+  edges,
+}: {
+  node: GraphNodeDto;
+  center: GraphNodeDto;
+  edges: GraphEdgeDto[];
+}) {
+  const incidentEdges = edges
+    .filter((e) => e.source === node.hash || e.target === node.hash)
+    .sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1));
+
+  const linkToCenter = incidentEdges.filter(
+    (e) =>
+      (e.source === node.hash && e.target === center.hash) ||
+      (e.target === node.hash && e.source === center.hash),
+  );
+  const topEvidences = linkToCenter.length > 0 ? linkToCenter : incidentEdges.slice(0, 5);
+
+  // Força do vínculo direto com o centro: soma das forças das arestas + bônus
+  // por diversidade de tipos (mesma fórmula do canvas em edge-weight.ts).
+  const directMultiplicity = linkToCenter.reduce((sum, e) => sum + Math.max(1, e.weight), 0);
+  const directKinds = new Set(linkToCenter.map((e) => e.kind));
+  const pairWeight =
+    linkToCenter.length > 0 ? directMultiplicity + W_DIV * (directKinds.size - 1) : 0;
+
+  return (
+    <div className="flex flex-col gap-4 text-sm">
+      <div>
+        <p className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+          {node.hash === center.hash ? 'Centro da rede' : 'Vínculo com o centro'}
+        </p>
+        {linkToCenter.length > 0 ? (
+          <div className="mt-1 flex items-center gap-2 text-xs">
+            <span className="rounded-full border border-primary/40 bg-primary/5 px-2 py-0.5 font-mono tabular-nums text-foreground">
+              força {pairWeight}
+            </span>
+            <span className="text-muted-foreground">
+              {directKinds.size} tipo{directKinds.size === 1 ? '' : 's'} · {linkToCenter.length}{' '}
+              conexõe{linkToCenter.length === 1 ? '' : 's'}
+            </span>
+          </div>
+        ) : null}
+        {topEvidences.length === 0 ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Sem vínculo direto. Esse nó aparece em outros vínculos da rede.
+          </p>
+        ) : (
+          <ul className="mt-1 space-y-1.5">
+            {topEvidences.slice(0, 5).map((e, i) => (
+              <li
+                key={`${e.kind}-${i}`}
+                className="rounded-md border border-border/70 bg-muted/30 px-2 py-1.5 text-xs"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{edgeKindLabel(e)}</span>
+                  {isProcessEvidence(e.evidence) ? (
+                    <span className="font-mono tabular-nums text-muted-foreground">
+                      {e.evidence.occurrences} proc.
+                    </span>
+                  ) : null}
+                </div>
+                {isProcessEvidence(e.evidence) && e.evidence.samePolo === true ? (
+                  <span className="text-[0.65rem] text-emerald-600">mesmo polo</span>
+                ) : null}
+                {isProcessEvidence(e.evidence) && e.evidence.samePolo === false ? (
+                  <span className="text-[0.65rem] text-red-600">polos opostos</span>
+                ) : null}
+                {isCorporateEvidence(e.evidence) ? (
+                  <div className="mt-0.5 flex flex-col gap-0.5 text-[0.65rem] text-muted-foreground">
+                    <span>{e.evidence.vinculo}</span>
+                    {e.evidence.percentualParticipacao !== undefined ? (
+                      <span>{e.evidence.percentualParticipacao}% participação</span>
+                    ) : null}
+                    {e.evidence.dataInicioRelacionamento ? (
+                      <span>
+                        início:{' '}
+                        {new Date(e.evidence.dataInicioRelacionamento).toLocaleDateString('pt-BR')}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {isFamilyEvidence(e.evidence) && e.evidence.nivel ? (
+                  <div className="mt-0.5 text-[0.65rem] text-muted-foreground">
+                    {e.evidence.nivel}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        <span className="font-mono tabular-nums">{incidentEdges.length}</span> conexão(ões) no total
+        nesse subgrafo.
+      </div>
+
+      {node.type !== 'lawyer' ? (
+        <div className="flex flex-col gap-2 border-t border-border pt-3">
+          <InvestigateButton hash={node.hash} />
+          <Link href={`/network/${encodeURIComponent(node.hash)}`}>
+            <Button variant="outline" size="sm" className="w-full">
+              Centralizar a rede neste nó
+            </Button>
+          </Link>
+          <p className="text-[0.65rem] text-muted-foreground">
+            Investigar dispara uma nova consulta e antifraude; centralizar apenas reposiciona a rede
+            já mapeada.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CaminhosTab({
+  node,
+  center,
+  pathStart,
+  pathStartNode,
+  path,
+  onSetStart,
+  onClearStart,
+  pathNodesByHash,
+  onPickNode,
+}: {
+  node: GraphNodeDto;
+  center: GraphNodeDto;
+  pathStart: string | null;
+  pathStartNode: GraphNodeDto | null;
+  path: ShortestPath | null;
+  onSetStart: (hash: string | null) => void;
+  onClearStart: () => void;
+  pathNodesByHash: Map<string, GraphNodeDto>;
+  onPickNode: (hash: string) => void;
+}) {
+  if (!pathStart) {
+    return (
+      <div className="flex flex-col gap-3 text-sm">
+        <p className="text-xs text-muted-foreground">
+          Investigue o menor caminho entre dois nós. Selecione a origem aqui e depois clique em
+          outro nó pra definir o destino.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => onSetStart(node.hash)}>
+          <MapPin className="size-3.5" />
+          Usar este nó como origem
+        </Button>
+        <div className="rounded-md border border-dashed border-border bg-muted/20 px-2 py-3 text-center text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+          Dica: o centro do grafo é normalmente o melhor destino.
+        </div>
+      </div>
+    );
+  }
+
+  if (pathStart === node.hash) {
+    return (
+      <div className="flex flex-col gap-3 text-sm">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-2 py-2 text-xs">
+          <div className="flex flex-col">
+            <span className="text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+              Origem definida
+            </span>
+            <span className="font-medium">{pathStartNode?.label.name ?? node.maskedPreview}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClearStart}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Limpar origem"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Agora clique em outro nó pra definir o destino.
+        </p>
+      </div>
+    );
+  }
+
+  // pathStart set AND node is potential destination — show path or "no path"
+  return (
+    <div className="flex flex-col gap-3 text-sm">
+      <div className="flex items-center justify-between gap-2 rounded-md border border-primary/40 bg-primary/5 px-2 py-2 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-medium">
+            {pathStartNode?.label.name ?? pathStart.slice(0, 10)}
+          </span>
+          <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+          <span className="truncate font-medium">{node.label.name ?? node.maskedPreview}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onClearStart}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Limpar caminho"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      {!path ? (
+        <p className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+          Nenhum caminho encontrado entre estes nós com os filtros atuais. Tente reduzir o slider de
+          vínculos ou habilitar mais tipos.
+        </p>
+      ) : (
+        <div>
+          <p className="text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+            Caminho de {path.nodes.length} nó(s) — {path.edgeIndices.length} salto(s)
+          </p>
+          <ol className="mt-2 space-y-1">
+            {path.nodes.map((hash, idx) => {
+              const n =
+                hash === center.hash
+                  ? center
+                  : (pathNodesByHash.get(hash) ?? {
+                      hash,
+                      type: 'cpf' as const,
+                      label: {},
+                      maskedPreview: hash.slice(0, 12),
+                      isPep: false,
+                      hasSanction: false,
+                      weight: 0,
+                      lastSeenAt: '',
+                    });
+              return (
+                // biome-ignore lint/suspicious/noArrayIndexKey: path nodes can repeat in degenerate inputs and order is meaningful
+                <li key={`${hash}-${idx}`}>
+                  <button
+                    type="button"
+                    onClick={() => onPickNode(hash)}
+                    className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted"
+                  >
+                    <span className="font-mono text-muted-foreground">{idx + 1}</span>
+                    <span className="truncate font-medium">{n.label.name ?? n.maskedPreview}</span>
+                    <span className="ml-auto text-[0.65rem] uppercase text-muted-foreground">
+                      {n.type}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function NodeDetailPanel({
+  node,
+  center,
+  edges,
+  pathStart,
+  pathStartNode,
+  path,
+  pathNodesByHash,
+  onSetPathStart,
+  onClearPathStart,
+  onPickNode,
+}: {
+  node: GraphNodeDto | null;
+  center: GraphNodeDto;
+  edges: GraphEdgeDto[];
+  pathStart: string | null;
+  pathStartNode: GraphNodeDto | null;
+  path: ShortestPath | null;
+  pathNodesByHash: Map<string, GraphNodeDto>;
+  onSetPathStart: (hash: string | null) => void;
+  onClearPathStart: () => void;
+  onPickNode: (hash: string) => void;
+}) {
+  const [tab, setTab] = useState<Tab>('visao');
+
+  if (!node) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Selecione um nó</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
+          <p>Clique em qualquer nó para ver detalhes, evidências e conexões.</p>
+          <div className="rounded-md border border-dashed border-border bg-muted/20 px-2 py-2 text-[0.65rem] uppercase tracking-wider">
+            Atalhos: clique seleciona · passe o mouse pra destacar · use a aba Caminhos pra
+            descobrir como dois nós se conectam.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="gap-2">
+        <CardTitle className="truncate">{node.label.name ?? node.maskedPreview}</CardTitle>
+        <p className="font-mono text-xs text-muted-foreground">
+          {formatDoc(node) ?? node.maskedPreview}
+        </p>
+        <span className="inline-flex w-fit items-center gap-1 rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+          {node.type === 'cpf' ? 'Pessoa' : node.type === 'cnpj' ? 'Empresa' : 'Advogado'}
+        </span>
+      </CardHeader>
+      <div className="flex border-b border-border px-3">
+        {(['visao', 'caminhos'] as const).map((t) => {
+          const Icon = TAB_ICON[t];
+          const active = tab === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs transition-colors ${
+                active
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="size-3" />
+              {TAB_LABEL[t]}
+            </button>
+          );
+        })}
+      </div>
+      <CardContent className="pt-4">
+        {tab === 'visao' ? <VisaoTab node={node} center={center} edges={edges} /> : null}
+        {tab === 'caminhos' ? (
+          <CaminhosTab
+            node={node}
+            center={center}
+            pathStart={pathStart}
+            pathStartNode={pathStartNode}
+            path={path}
+            onSetStart={onSetPathStart}
+            onClearStart={onClearPathStart}
+            pathNodesByHash={pathNodesByHash}
+            onPickNode={onPickNode}
+          />
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

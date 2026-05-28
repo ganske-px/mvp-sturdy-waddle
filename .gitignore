@@ -23,7 +23,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -153,7 +152,6 @@ ENV/
 env.bak/
 venv.bak/
 .vscode
-*.json
 
 # Spyder project settings
 .spyderproject
@@ -216,3 +214,52 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# ===========================
+# Next.js / Node
+# ===========================
+node_modules/
+.next/
+out/
+build/
+.turbo/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# ===========================
+# Test coverage
+# ===========================
+coverage/
+.vitest/
+
+# ===========================
+# Storybook
+# ===========================
+storybook-static/
+.storybook-out/
+node_modules/.cache/storybook/
+
+# ===========================
+# Playwright (visual tests)
+# ===========================
+test-results/
+playwright-report/
+playwright/.cache/
+
+# ===========================
+# Env / secrets (extra)
+# ===========================
+.env*.local
+.env.development
+.env.production
+
+# ===========================
+# Legacy Streamlit (PII data)
+# ===========================
+legacy-streamlit/data/
+legacy-streamlit/.streamlit/secrets.toml
+legacy-streamlit/secrets.toml
+data/historico_pesquisas.json
+
+# Visual brainstorm companion (superpowers)
+.superpowers/

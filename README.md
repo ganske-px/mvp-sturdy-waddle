@@ -1,487 +1,264 @@
-# Legal Process Search MVP
+# mvp-sturdy-waddle
 
-A comprehensive judicial process search system with AI-powered risk assessment for employee background checks (Know-Your-Employee).
+Internal background check app for PX Center — operators run judicial process searches against the Predictus API by CPF, CNPJ or name, individually or in batches via CSV upload, with automatic antifraude enrichment via the Netrin `consulta-composta` API (3-hop: CPF → CNPJs vinculados → CPFs sócios).
 
-## 🚀 Features
+> **For Claude Code:** project conventions, invariants and recipes live in [`CLAUDE.md`](./CLAUDE.md). Read that first.
+>
+> **Migration note:** this repository was rewritten from a Streamlit + Python MVP to a Supabase + Next.js + Vercel stack. The original Python implementation is preserved under [`legacy-streamlit/`](./legacy-streamlit) for reference only — never imported by the new app.
 
-### Core Functionality
-- 🔍 **Single Search**: Search judicial processes by name or CPF
-- 📂 **Bulk Search**: Upload CSV files to search multiple CPFs at once
-- 📋 **Process Details**: View complete case information, parties, lawyers, movements
-- 💾 **Search History**: Automatic persistence of searches and process details
-- 📊 **Statistics**: Aggregated insights across searches
+## Stack
 
-### AI-Powered Risk Assessment
-- 🤖 **Google Gemini Integration**: Advanced AI analysis of legal risk
-- 🎯 **Multi-Factor Scoring**: 4-factor risk calculation (0-100 scale)
-  - Process volume
-  - Defendant role frequency
-  - Case type severity
-  - Financial exposure
-- 📈 **Risk Levels**: Low / Medium / High / Critical classification
-- 🚩 **Red Flags**: AI-identified specific concerns
-- 💡 **Insights**: Context-aware employment recommendations
-- 📥 **CSV Export**: Complete risk data in downloadable reports
+- **App:** Next.js 16 (App Router) + React 19 + TypeScript strict
+- **UI:** Tailwind 4 + shadcn/ui + Biome
+- **Backend:** Supabase (Postgres 16 + Auth + Edge Functions + Realtime + Vault + pg_cron)
+- **Deploy:** Vercel (Next.js) + Supabase (database, auth, edge functions)
+- **Tests:** Vitest with TDD discipline — **270 passing** across 31 suites
 
-### Technical Features
-- 🏗️ **MVC Architecture**: Clean, maintainable code structure
-- 🔐 **Authentication**: Secure user login system
-- 📊 **Analytics**: Posthog integration for usage tracking
-- 🎨 **Modern UI**: Streamlit-based responsive interface
-- 🌐 **API Integration**: Predictus judicial process API
+## Scope
 
-## 📋 Table of Contents
+What it does:
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Project Structure](#project-structure)
-- [Usage](#usage)
-- [Risk Assessment](#risk-assessment)
-- [Development](#development)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
+- Single search by CPF, CNPJ or name (Predictus)
+- Bulk search from CSV upload, capped at **250 documents per job**, processed asynchronously by a Supabase Edge Function
+- Automatic antifraude enrichment via Netrin `consulta-composta` on every CPF and CNPJ search (Hops 1+2+3) — identity, PEP/sanções, mídia negativa, processos, empresas relacionadas e sócios, fired-and-forgotten to a dedicated Edge Function
+- Per-operator search history and audit log (private via RLS) — Netrin call audit logs every external lookup
+- Shared, encrypted Predictus + Netrin caches with 30-day TTL (separate vault keys for defense in depth)
+- Unified network graph (`/network/[hash]`) blending processual (Predictus) and societário (Netrin) relationships
+- Email + password auth with manual operator allowlist
 
-## 🛠️ Installation
+What it does **not** do:
 
-### Prerequisites
-- Python 3.8+
-- pip package manager
-- Google Gemini API key (free tier available)
+- Gemini-powered risk scoring (referenced in the legacy README but never shipped)
+- PostHog instrumentation
+- Multi-tenant organisations or per-customer billing
+- Cancellation of in-flight bulk jobs
 
-### Install Dependencies
+## Routes
+
+| Path | Type | Purpose |
+| --- | --- | --- |
+| `/` | static | Nav cards (Search / Bulk / History) + audit link + sign out |
+| `/login` | static | Email + password sign-in |
+| `/access-denied` | static | Authenticated but not on the operator allowlist |
+| `/search/person` | static (client) | Single CPF / nome lookup |
+| `/search/company` | static (client) | Single CNPJ lookup |
+| `/search/result/[hash]` | dynamic | Predictus processes + Antifraude cards (Realtime via `enrichment:<jobId>`) |
+| `/network/[hash]` | dynamic | Unified network graph — processual + societário, with kind filters |
+| `/bulk` | static (client) | CSV paste/upload to create a bulk job |
+| `/bulk/[jobId]` | dynamic | Realtime progress page (Supabase channels) |
+| `/history` | dynamic | Operator's last 100 searches |
+| `/audit` | dynamic | Operator's last 200 audit events |
+| `proxy.ts` | edge | Session refresh + allowlist enforcement |
+
+## Auth model
+
+Operators are created by an admin through the in-app UI at `/admin/users/new` (Supabase Studio is no longer used for routine user creation — see "Bootstrap do primeiro admin" below for the one-time exception). Signup is disabled in `supabase/config.toml`. The `on_auth_user_created` trigger mirrors each new `auth.users` row into `public.users`, and `proxy.ts` redirects any authenticated user without a `public.users` row to `/access-denied`. Admins can also disable a `public.users` row (`is_active=false`) to revoke access without deleting the underlying `auth.users` row.
+
+Password requirements: 12+ chars, mixed case, digits, symbols.
+
+## Papéis e permissões
+
+A app tem dois papéis: **admin** e **operator**.
+
+- **Operator** acessa apenas os serviços que um admin habilitou para ele:
+  - Buscar pessoa (CPF e nome)
+  - Buscar empresa (CNPJ)
+  - Buscar em lote (CSV)
+- **Admin** tem todas as permissões automaticamente, além de:
+  - Criar operadores e definir senha temporária
+  - Ativar/desativar contas
+  - Promover/rebaixar entre admin e operator
+  - Mudar permissões de qualquer operador
+  - Ver o audit log de todos os operadores em `/admin/audit`
+
+Operadores são criados pela UI em `/admin/users/new`. A senha temporária é exibida uma única vez para o admin repassar pelo canal seguro. Sem dependência de SMTP.
+
+## Bootstrap do primeiro admin
+
+Depois de aplicar as migrations (`pnpm exec supabase db push`), promova um usuário existente a admin via SQL no Supabase Studio:
+
+```sql
+update public.users
+set role = 'admin'
+where email = 'seu-email@px.center';
+```
+
+Todos os operadores que já existiam quando a migration entrou ficam como `role='operator'`, `is_active=true`, **sem permissões**. Use a tela `/admin/users` para liberar acesso individualmente.
+
+## LGPD posture
+
+- CPF, CNPJ and personal names **never** appear in cleartext in `public.searches`, `public.audit_log`, `public.enrichment_jobs` or `public.enrichment_job_calls`. All store a SHA-256 `document_hash` (with type prefix `cpf:` / `cnpj:` / `name:` / `lawyer:`) and a masked `term_preview` (e.g. `123.***.***-10`).
+- `predictus_cache.encrypted_payload` and `bulk_job_items.document_encrypted` are `bytea`, encrypted via Vault key `predictus_cache_key`.
+- `netrin_cache.encrypted_payload` is `bytea`, encrypted via a **separate** Vault key `netrin_cache_key` (defense in depth — vazamento de uma chave não compromete a outra).
+- `graph_nodes.encrypted_label` is `bytea`, encrypted via a third Vault key `graph_label_key`. `masked_preview` is the LGPD-safe rendering for client-side fallback.
+- Plaintext CPF/CNPJ exists only on the call stack of `processBulkItem` (Predictus) or `processEnrichmentJob` (Netrin) during the upstream HTTP call — never persisted.
+- `NETRIN_TOKEN` is server-only — never logged, never returned in error messages, never reaches the client.
+- `pg_cron` runs daily at 03:00 UTC:
+  - `audit_log`, expired `predictus_cache`, and expired `netrin_cache` rows purged after **30 days**
+  - Completed/failed `bulk_jobs` purged after **7 days** (they hold encrypted documents)
+  - Completed/failed/partial `enrichment_jobs` purged after **30 days** (only hold hashes; calls cascade-delete)
+  - Orphan `enrichment_jobs` (status `pending`/`running` started > 15 min ago) marked as `failed` every 5 minutes
+- Audit log captures `user_id`, `action` (including `enrichment_call`), `document_hash`, `ip`, `user_agent` and `metadata` (jsonb with hop number + job id for Netrin calls). Operators read their own audit history; writes happen only via the secret key (`SUPABASE_SECRET_KEY`, formerly `SUPABASE_SERVICE_ROLE_KEY`).
+
+## Local setup
+
+### 1. Install dependencies
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd mvp-sturdy-waddle
-
-# Install required packages
-pip install -r requirements.txt
+pnpm install
 ```
 
-### Required Packages
-```
-streamlit==1.48.1
-requests==2.32.5
-posthog==6.6.1
-google-generativeai==0.8.3
-pandas==2.2.3
-python-dateutil==2.9.0.post0
-```
+### 2. Boot Supabase locally
 
-## ⚡ Quick Start
-
-### 1. Get API Keys
-
-#### Google Gemini (Required for Risk Assessment)
-1. Visit https://aistudio.google.com/app/apikey
-2. Sign in with Google account
-3. Click "Create API Key"
-4. Copy your key
-
-**Free Tier:** 1,500 requests/day, no credit card required
-
-#### Predictus API (Required for Process Search)
-Contact Predictus to obtain API credentials.
-
-### 2. Configure Secrets
-
-Create `.streamlit/secrets.toml`:
-
-```toml
-# Google Gemini - Risk Assessment
-GEMINI_API_KEY = "your_gemini_api_key_here"
-GEMINI_MODEL = "gemini-1.5-flash"
-
-# Predictus API
-PREDICTUS_USERNAME = "your_username"
-PREDICTUS_PASSWORD = "your_password"
-
-# Posthog Analytics (Optional)
-POSTHOG_KEY = "your_posthog_key"
-POSTHOG_HOST = "https://app.posthog.com"
-
-# Application Users
-[USUARIOS_APP]
-"admin" = "admin123"
-"user" = "user123"
-```
-
-### 3. Run the Application
+Requires Docker.
 
 ```bash
-streamlit run app.py
+pnpm exec supabase start
 ```
 
-Visit http://localhost:8501 in your browser.
-
-### 4. Login & Search
-
-1. Login with configured credentials
-2. Search by name or CPF
-3. View results with risk assessment
-4. Export data as needed
-
-## ⚙️ Configuration
-
-### Application Settings
-
-Edit `config/settings.py`:
-
-```python
-# History Configuration
-MAX_HISTORY_ITEMS = 50
-
-# API Timeouts
-REQUEST_TIMEOUT = 30
-
-# File Upload Limits
-MAX_FILE_SIZE_MB = 10
-ALLOWED_FILE_TYPES = ['csv']
-```
-
-### Risk Assessment Configuration
-
-Customize risk weights in `models/risk_assessment.py`:
-
-```python
-# Risk factor weights (must sum to 1.0)
-WEIGHTS = {
-    "process_count": 0.25,      # 25%
-    "defendant_role": 0.30,     # 30%
-    "case_severity": 0.25,      # 25%
-    "financial_exposure": 0.20  # 20%
-}
-
-# Case severity scores (0-100)
-CASE_SEVERITY = {
-    "criminal": 100,
-    "trabalhista": 70,
-    "civil": 40,
-    # Add custom case types...
-}
-```
-
-### Gemini Model Options
-
-Choose model in secrets.toml:
-
-- `gemini-1.5-flash`: Fast, efficient (recommended)
-- `gemini-1.5-pro`: Highest quality, slower
-- `gemini-1.5-flash-8b`: Fastest, good for high volume
-
-## 📁 Project Structure
-
-```
-mvp-sturdy-waddle/
-├── app.py                      # Main application entry point
-├── requirements.txt            # Python dependencies
-│
-├── config/                     # Configuration
-│   └── settings.py            # App constants and settings
-│
-├── models/                     # Business Logic & Data
-│   ├── analytics.py           # Posthog analytics
-│   ├── auth.py                # Authentication
-│   ├── predictus_api.py       # API client
-│   └── risk_assessment.py     # Risk scoring & LLM
-│
-├── controllers/                # Business Orchestration
-│   ├── bulk_search.py         # Bulk CPF searches
-│   └── csv_processor.py       # CSV file processing
-│
-├── views/                      # UI Components
-│   ├── auth_components.py     # Login & user info
-│   ├── bulk_search_components.py  # Bulk results UI
-│   ├── process_components.py  # Process details
-│   └── risk_components.py     # Risk assessment panels
-│
-├── utils/                      # Utilities
-│   ├── data_helpers.py        # Formatting & validation
-│   └── file_storage.py        # JSON persistence
-│
-└── docs/                       # Documentation
-    ├── RISK_ASSESSMENT_README.md      # Risk feature docs
-    ├── SETUP_RISK_ASSESSMENT.md       # Quick setup
-    ├── MVC_ARCHITECTURE.md            # Architecture guide
-    └── REFACTORING_SUMMARY.md         # Code organization
-```
-
-## 📖 Usage
-
-### Single Search
-
-1. Enter a **name** or **CPF** in the search box
-2. Click "🔍 New Search"
-3. View results with:
-   - Risk assessment panel
-   - Process statistics
-   - Detailed process information
-4. Click "Get Details" on processes for movement history
-
-### Bulk Search (CSV)
-
-1. Switch to "📂 Bulk Search (CSV)" tab
-2. Upload CSV file containing CPFs
-3. Preview extracted CPFs
-4. Click "🔍 Start Bulk Search"
-5. Wait for completion (progress bar shows status)
-6. View results with:
-   - Summary statistics
-   - Risk level breakdown
-   - Individual risk assessments
-7. Click "📥 Download Results (CSV)" to export
-
-### Search History
-
-- All searches automatically saved
-- Access from sidebar
-- Click "📂 Open" to reload a search
-- Click "🗑️ Delete" to remove from history
-
-## 🎯 Risk Assessment
-
-The system evaluates employment risk using AI and quantitative metrics.
-
-### Risk Factors (Weighted)
-
-1. **Process Count (25%)**
-   - 0 processes: 0 points
-   - 1 process: 20 points
-   - 2 processes: 35 points
-   - 3-5 processes: 50 points
-   - 6-10 processes: 70 points
-   - 10+ processes: 70+ points
-
-2. **Defendant Role (30%)**
-   - Percentage of cases as defendant
-   - Higher risk than plaintiff role
-   - Keywords: réu, executado, demandado
-
-3. **Case Severity (25%)**
-   - Criminal/Penal: 100 (highest)
-   - Labor (Trabalhista): 70
-   - Execution: 60
-   - Civil: 40
-   - Family/Consumer: 25-30
-
-4. **Financial Exposure (20%)**
-   - < R$ 10k: 20 points
-   - R$ 10k-50k: 35 points
-   - R$ 50k-100k: 50 points
-   - R$ 100k-500k: 70 points
-   - R$ 500k+: 70+ points
-
-### Risk Levels
-
-| Level | Score | Color | Meaning |
-|-------|-------|-------|---------|
-| ✅ Low | 0-25 | Green | Minimal concerns - approve |
-| ⚠️ Medium | 26-50 | Orange | Some concerns - review |
-| 🔴 High | 51-75 | Red | Significant concerns - careful review |
-| ⛔ Critical | 76-100 | Dark Red | Major red flags - high caution |
-
-### AI Insights
-
-Google Gemini analyzes each case and provides:
-- **Key Insights**: 2-3 bullet points about findings
-- **Red Flags**: Specific concerns identified
-- **Recommendation**: Clear guidance (approve/review/reject)
-- **Context**: Understands Brazilian legal system
-
-### Privacy & Cost
-
-**Privacy:**
-- Data sent to Google's Gemini API
-- Google doesn't use API data for training
-- All data encrypted in transit (HTTPS)
-- Consider data sensitivity for your use case
-
-**Cost:**
-- **Free Tier**: 1,500 requests/day (no credit card)
-- **Paid Tier**: ~$0.00015 per analysis
-- **100 checks**: < $0.02 (two cents)
-
-## 🔧 Development
-
-### MVC Architecture
-
-The application follows Model-View-Controller pattern:
-
-- **Models**: Business logic, data operations
-- **Views**: UI components (Streamlit)
-- **Controllers**: Orchestrate models and views
-- **Utils**: Reusable helper functions
-- **Config**: Centralized configuration
-
-### Running Tests
+The first run downloads container images and applies the migrations under `supabase/migrations/`. It prints `API URL`, `publishable key` and `secret key` — copy those into `.env.local`:
 
 ```bash
-# Unit tests (models & utils)
-pytest tests/test_models.py
-pytest tests/test_utils.py
-
-# Integration tests (controllers)
-pytest tests/test_controllers.py
-
-# All tests
-pytest
+cp .env.local.example .env.local
+# fill in the printed values
 ```
 
-### Adding New Features
-
-Example: Add email notifications
-
-1. **Model** (`models/notifications.py`):
-```python
-class EmailNotifier:
-    def send_risk_alert(self, cpf, risk_data):
-        # Email logic
-        pass
-```
-
-2. **Controller** (`controllers/bulk_search.py`):
-```python
-if risk_data['level'] == 'critical':
-    notifier.send_risk_alert(cpf, risk_data)
-```
-
-3. **View** (`views/risk_components.py`):
-```python
-st.info("📧 Alert sent to HR team")
-```
-
-### Code Style
-
-- Follow PEP 8 guidelines
-- Use type hints
-- Add docstrings to all functions
-- Keep modules under 300 lines
-- Single responsibility principle
-
-## 📚 Documentation
-
-Comprehensive documentation available:
-
-- **[RISK_ASSESSMENT_README.md](RISK_ASSESSMENT_README.md)**: Complete risk assessment guide
-- **[SETUP_RISK_ASSESSMENT.md](SETUP_RISK_ASSESSMENT.md)**: 5-minute setup guide
-- **[MVC_ARCHITECTURE.md](MVC_ARCHITECTURE.md)**: Architecture documentation
-- **[REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)**: Code organization details
-
-## 🤝 Contributing
-
-### Guidelines
-
-1. Follow MVC pattern
-2. Keep modules focused (single responsibility)
-3. Add tests for new features
-4. Update documentation
-5. Use clear commit messages
-
-### Development Workflow
+### 3. Initialize the Vault keys for encrypted storage
 
 ```bash
-# Create feature branch
-git checkout -b feature/new-feature
-
-# Make changes
-# ... edit files ...
-
-# Run tests
-pytest
-
-# Commit changes
-git add .
-git commit -m "Add: new feature description"
-
-# Push and create PR
-git push origin feature/new-feature
+psql "$(pnpm exec supabase status -o env | grep DB_URL | cut -d= -f2)" \
+  -f scripts/bootstrap-vault.sql
 ```
 
-## 🐛 Troubleshooting
+Idempotent. Creates three Vault secrets: `predictus_cache_key` (Predictus cache + bulk items), `netrin_cache_key` (Netrin antifraude cache), and `graph_label_key` (encrypted node labels). Without them, `encrypt_*` / `decrypt_*` RPCs throw a clear error and the search/bulk/enrichment paths surface it.
 
-### LLM Not Available
+### 4. Create the first admin, then operators
 
-**Error**: "LLM analysis unavailable"
+Routine user creation happens in-app at `/admin/users/new`, but you need an admin to get there. Bootstrap the first admin as follows:
 
-**Solutions:**
-1. Check `GEMINI_API_KEY` in `.streamlit/secrets.toml`
-2. Verify API key at https://aistudio.google.com/app/apikey
-3. Check you haven't exceeded free tier (1500/day)
-4. Test key in Google AI Studio
+1. Create one user via Supabase Studio (Authentication → Add user) — the `on_auth_user_created` trigger mirrors them into `public.users`.
+2. Promote that user to admin in the Studio SQL editor:
 
-### Import Errors
+   ```sql
+   update public.users
+   set role = 'admin'
+   where email = 'seu-email@px.center';
+   ```
 
-**Error**: `ModuleNotFoundError`
+3. Sign in as that admin and create the remaining operators from `/admin/users/new`. The temporary password is shown once — share it through a secure channel.
 
-**Solution:**
+See "Papéis e permissões" and "Bootstrap do primeiro admin" above for the full picture.
+
+### 5. Configure Predictus and Netrin credentials
+
+Fill `PREDICTUS_USERNAME` / `PREDICTUS_PASSWORD` and `NETRIN_TOKEN` in `.env.local`. Both are shared across all operators (one upstream account each). `NETRIN_PEP_ACURACIA` defaults to 95 — lower it only if you need looser PEP name matching.
+
+If `NETRIN_TOKEN` is empty, enrichment jobs will fail at the first Netrin call and the corresponding `enrichment_jobs` row ends in `failed` — Predictus search continues to work normally.
+
+### 6. Run the app
+
 ```bash
-pip install -r requirements.txt
+pnpm dev
 ```
 
-### Authentication Failed
+Open <http://localhost:3000>.
 
-**Error**: "Invalid username or password"
+## Scripts
 
-**Solution:**
-1. Check `.streamlit/secrets.toml` has `[USUARIOS_APP]` section
-2. Verify username and password match exactly
-3. Passwords are case-sensitive
+| Script | Purpose |
+| --- | --- |
+| `pnpm dev` | Next.js dev server |
+| `pnpm build` | Production build |
+| `pnpm typecheck` | TypeScript strict check (no emit) |
+| `pnpm test` | Vitest run, once |
+| `pnpm test:watch` | Vitest watch mode |
+| `pnpm test:coverage` | Coverage report under `coverage/` |
+| `pnpm lint` | Biome check |
+| `pnpm lint:fix` | Biome check + autofix |
+| `pnpm format` | Biome format |
 
-### Rate Limits
+## Project layout
 
-**Error**: 429 or "quota exceeded"
+```
+app/                Next.js App Router pages + Server Actions (thin wiring)
+components/
+  ├── ui/           shadcn/ui primitives
+  ├── antifraude/   Cards renderizando Netrin (identity, pep, media, restrictions, related-companies, enrichment-realtime)
+  └── network/      Componentes do grafo unificado
+lib/                Pure-ish modules covered by Vitest — the logic lives here
+  ├── validators/   CPF, CNPJ, name (check digits, masking)
+  ├── csv/          CSV parser with 250-doc cap
+  ├── hash.ts       SHA-256 document hashing with type prefix (cpf, cnpj, name, lawyer)
+  ├── audit.ts      audit_log writer + request context extractor
+  ├── crypto/       Vault encrypt/decrypt wrappers (predictus + netrin + graph_label)
+  ├── predictus/    HTTP client, token store, cache, item-processor
+  ├── netrin/       Antifraude pipeline — client, cache, parsers (pivot CNPJs/CPFs), hops 1/2/3, graph-bridge, job-store, processor, result-loader
+  ├── graph/        Shared graph types, label crypto, writer, extractor, path
+  ├── bulk/         Job store + orchestration loop
+  └── supabase/     Browser/server/admin clients + proxy session refresh
+proxy.ts            Next.js 16 file convention (the artifact formerly known as middleware.ts)
+supabase/
+  ├── migrations/   SQL — schema, RLS, crypto helpers, pg_cron retention
+  └── functions/
+      ├── process-bulk-job/         Edge Function (Deno) — bulk CSV worker
+      └── process-enrichment-job/   Edge Function (Deno) — Netrin Hops 1+2+3 worker
+scripts/
+  └── bootstrap-vault.sql    Idempotent Vault key creation (predictus + netrin + graph_label)
+legacy-streamlit/             Original Python MVP, kept for reference only
+```
 
-**Solution:**
-- Free tier: 15 requests/minute, 1500/day
-- Wait and retry
-- Consider upgrading to paid tier
-- For bulk searches, spread over time
+## Deployment
 
-## 📊 Performance
+- **Hosting:** Vercel. Connect this repo, set the env vars from `.env.local` in Vercel Project Settings (include `NETRIN_BASE_URL` and `NETRIN_TOKEN`).
+- **Database:** managed Supabase project. `pnpm exec supabase db push` applies pending migrations.
+- **Vault keys:** run `scripts/bootstrap-vault.sql` once per environment (Studio → SQL editor works too).
+- **Edge Functions:**
+  ```bash
+  pnpm exec supabase functions deploy process-bulk-job
+  pnpm exec supabase functions deploy process-enrichment-job
+  ```
+  Also push Netrin secrets to the Edge runtime:
+  ```bash
+  pnpm exec supabase secrets set NETRIN_BASE_URL=https://api.netrin.com.br NETRIN_TOKEN=<token> NETRIN_PEP_ACURACIA=95
+  ```
+- **Vercel function timeout:** Server Actions only enqueue; the heavy lifting runs in Supabase Edge Functions via `EdgeRuntime.waitUntil`, so the Vercel route returns 202 immediately.
 
-### Response Times
-- Single search: 2-3 seconds
-- Risk assessment: 1-2 seconds
-- Bulk search (100 CPFs): 3-5 minutes
+## Limits and assumptions
 
-### Resource Usage
-- Memory: ~200MB
-- CPU: Low (API-based processing)
-- Disk: Minimal (JSON history files)
+- Bulk CSV ≤ 250 documents per job (enforced server-side in `parseCsv` and via a CHECK constraint on `bulk_jobs.total_items`).
+- Predictus rate limit assumed at **1000 requests/hour**, so the bulk Edge Function paces requests at **1 every 3.6 s**.
+- The Predictus token persists in `public.predictus_token` (singleton row), so it survives Edge Function cold starts. Netrin uses a static token from env — no refresh, no persistence.
+- Netrin rate limit is unknown from the doc; the enrichment Edge Function runs serial without defensive pacing. If we hit 429 in production we'll add `RETRY_AFTER`-aware delay.
+- Netrin fanout: an enrichment job runs 1 + N + N×M calls (Hop1 root → N CNPJs vinculados → M sócios CPF cada). Cache hits across operators on shared documents amortize cost over 30 days. No fanout cap is enforced.
+- Single search may reuse an in-flight enrichment job (unique partial index on `enrichment_jobs.root_hash WHERE status IN ('pending','running')`). Repeated searches of the same CPF/CNPJ while the job is running don't trigger duplicate work.
+- Cache TTL = 30 days for both Predictus and Netrin. Audit retention = 30 days. Completed bulk jobs purged after 7 days. Completed/partial/failed enrichment jobs purged after 30 days.
 
-## 🔒 Security
+## Status
 
-### Best Practices
-1. Never commit `secrets.toml` to git
-2. Use environment variables in production
-3. Rotate API keys periodically
-4. Use separate keys for dev/staging/prod
-5. Monitor API usage regularly
+Everything in the scope above is implemented and covered. Test counts at the time of writing:
 
-### Data Privacy
-- Judicial process data sent to Google API
-- Review Google's privacy policy
-- Consider data sensitivity
-- Implement audit logging if needed
+| Module | Tests |
+| --- | --- |
+| `lib/validators/*`, `lib/csv/*`, `lib/hash`, `lib/audit`, `lib/crypto/vault` | baseline |
+| `lib/predictus/*`, `lib/bulk/*`, `lib/graph/*` | baseline |
+| `lib/netrin/client` | 8 |
+| `lib/netrin/cache` | 3 |
+| `lib/netrin/parsers/pivot-cnpjs` | 4 |
+| `lib/netrin/parsers/pivot-cpfs` | 3 |
+| `lib/netrin/graph-bridge` | 3 |
+| `lib/netrin/hops/hop1`, `hop2`, `hop3` | 5 |
+| `lib/netrin/job-store` | 3 |
+| `lib/netrin/processor` | 4 |
+| **Total** | **270** |
 
-## 📄 License
+The `app/**` and `supabase/functions/**` layers are exercised by `pnpm build` (Next.js compiler) and the test suites of the libraries they wire together.
 
-This project is proprietary software. All rights reserved.
+## Contributing
 
-## 📞 Support
+Read [`CLAUDE.md`](./CLAUDE.md) before editing. Highlights:
 
-For issues or questions:
-1. Check documentation in `/docs`
-2. Review troubleshooting section
-3. Check Google Cloud status
-4. Open issue in repository
-
----
-
-**Version**: 2.0 (MVC + Risk Assessment)
-**Last Updated**: 2025-10-21
-**Python**: 3.8+
-**Framework**: Streamlit 1.48.1
-**AI**: Google Gemini 1.5
+- TDD is the default in `lib/**`.
+- Keep CPF/CNPJ out of any persisted artifact unless it's `bulk_job_items.document_encrypted`, `predictus_cache.encrypted_payload` or `netrin_cache.encrypted_payload` (all encrypted), or hashed via `hashDocument`.
+- Use `createServerPredictusClient()` / `createServerNetrinClient()` — never `new PredictusClient(...)` / `new NetrinClient(...)` directly.
+- `NETRIN_TOKEN` never appears in logs, audit, or client-side responses. It stays in `lib/netrin/server-client.ts` and the Edge Function.
+- Run `pnpm typecheck && pnpm test && pnpm lint` before committing.
